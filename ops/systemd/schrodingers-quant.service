@@ -1,0 +1,48 @@
+[Unit]
+Description=Schrödingers Quant Freqtrade dry-run stack (docker compose)
+Documentation=file:///opt/schrodingers-quant/ops/README.md
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+OnFailure=sq-alert@%n.service
+
+[Service]
+# Type=oneshot + RemainAfterExit=yes, not Type=simple running `docker compose
+# up` in the foreground: `docker compose up -d` starts the container(s) and
+# returns immediately, handing ongoing supervision to the Docker daemon,
+# which already restarts the container per compose.yaml's
+# `restart: unless-stopped` policy (including after a host reboot, once
+# docker.service itself is back). Wrapping a foregrounded `docker compose up`
+# in a Type=simple unit would make systemd supervise the compose CLI process
+# instead of the container, duplicating and fighting with Docker's own
+# restart policy. This unit's job is just to ensure the stack is created
+# and started once at boot, and to give operators a normal
+# `systemctl start|stop|status schrodingers-quant` interface plus a single
+# OnFailure= hook if that start/stop ever fails outright.
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/schrodingers-quant
+# No -f flag here: an explicit -f replaces Compose's default file list and
+# would silently drop the VPS overlay. Once config/local/vps.json and
+# config/local/secrets.json exist, put `COMPOSE_FILE=compose.yaml:compose.vps.yaml`
+# in /opt/schrodingers-quant/.env (gitignored; Compose auto-loads both compose
+# files and this variable from the project directory) — see README §2. The
+# ops/backup.sh and ops/restore.sh scripts rely on the same auto-discovery.
+ExecStart=/usr/bin/docker compose up -d
+ExecStop=/usr/bin/docker compose stop
+TimeoutStartSec=120
+TimeoutStopSec=60
+
+# Cheap hardening that does not interfere with docker CLI access. Not
+# ProtectSystem=strict and no ProtectHome=: this unit runs `docker compose`,
+# which needs its normal paths. Unverified by systemd-analyze on this
+# macOS development machine — see ops/README.md §4.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+
+[Install]
+WantedBy=multi-user.target

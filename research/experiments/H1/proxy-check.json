@@ -1,0 +1,49 @@
+{
+  "all_pass": true,
+  "correlation_min": 0.95,
+  "generated_at": "2026-09-24T15:55:07.308352+00:00",
+  "kraken_candle_limit": 720,
+  "median_deviation_max_bps": 50.0,
+  "results": {
+    "BTC/EUR": {
+      "1d": {
+        "kraken_first": "2024-10-05T00:00:00+00:00",
+        "kraken_last": "2026-09-23T00:00:00+00:00",
+        "median_abs_deviation_bps": 1.984992909768526,
+        "n_overlap": 719,
+        "ok": true,
+        "p95_abs_deviation_bps": 15.37838543514955,
+        "return_correlation": 0.9985981191527488
+      },
+      "4h": {
+        "kraken_first": "2026-05-27T16:00:00+00:00",
+        "kraken_last": "2026-09-24T08:00:00+00:00",
+        "median_abs_deviation_bps": 1.0609460284814782,
+        "n_overlap": 719,
+        "ok": true,
+        "p95_abs_deviation_bps": 4.00029845813454,
+        "return_correlation": 0.985057103005496
+      }
+    },
+    "ETH/EUR": {
+      "1d": {
+        "kraken_first": "2024-10-05T00:00:00+00:00",
+        "kraken_last": "2026-09-23T00:00:00+00:00",
+        "median_abs_deviation_bps": 2.13240686322993,
+        "n_overlap": 719,
+        "ok": true,
+        "p95_abs_deviation_bps": 15.532525745340694,
+        "return_correlation": 0.9994261917998186
+      },
+      "4h": {
+        "kraken_first": "2026-05-27T16:00:00+00:00",
+        "kraken_last": "2026-09-24T08:00:00+00:00",
+        "median_abs_deviation_bps": 1.3628991590915287,
+        "n_overlap": 719,
+        "ok": true,
+        "p95_abs_deviation_bps": 5.016239793794469,
+        "return_correlation": 0.9910210908508048
+      }
+    }
+  }
+}

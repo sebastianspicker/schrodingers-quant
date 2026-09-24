@@ -1,0 +1,33 @@
+{
+  "metrics": {
+    "avg_holding_time_hours": 639.27,
+    "cagr_pct": 29.774,
+    "exposure_pct": 53.663,
+    "market_change_pct": 268.9123,
+    "max_drawdown_account_pct": 17.5069,
+    "net_total_return_pct": 47.6782,
+    "return_over_max_drawdown": 2.7234,
+    "trade_count": 11,
+    "win_rate_pct": 45.4545
+  },
+  "provenance": {
+    "backtest_end": "2024-06-30 00:00:00",
+    "backtest_start": "2023-01-01 00:00:00",
+    "data_manifest_sha256": "947750a0f7e93ba88bf2756ee76f29c6f97d5d763fcc46f13823fbb29cb96997",
+    "enable_protections": true,
+    "fee": 0.01,
+    "image_digest": "freqtradeorg/freqtrade:2026.8@sha256:4d23160b501d2b34579e76f57ad75edfa274967cd0dd824ff1c1b86d8c166ab4",
+    "minimal_roi": {
+      "0": 100
+    },
+    "pairlist": [
+      "BTC/EUR"
+    ],
+    "period": "validation",
+    "stoploss": -0.2,
+    "strategy_file": "/freqtrade/strategies/H1ChannelBreakout.py",
+    "strategy_file_sha256": "142f95a482cf41f03bf27ed071d5464c63b8abcfa64637b6a6608f5f70d7fc8e",
+    "strategy_name": "H1ChannelBreakout",
+    "timerange": "20230101-20240630"
+  }
+}

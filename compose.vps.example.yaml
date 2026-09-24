@@ -1,0 +1,42 @@
+# Copy to compose.vps.yaml (gitignored, same pattern as compose.override.yaml)
+# to run the scaffold on the Debian 13 VPS with control enabled. Layer it on
+# top of the tracked compose.yaml either per-command:
+#
+#   docker compose -f compose.yaml -f compose.vps.yaml up -d
+#
+# or, so every `docker compose` invocation picks it up without a -f flag
+# (this is what the systemd units and ops/backup.sh, ops/restore.sh assume),
+# add this line to a gitignored .env file in the repo root:
+#
+#   COMPOSE_FILE=compose.yaml:compose.vps.yaml
+#
+# An explicit -f on the command line replaces Compose's file list rather than
+# adding to it, so don't mix an explicit `-f compose.yaml` with a COMPOSE_FILE
+# that also lists compose.vps.yaml — pick one mechanism per invocation.
+#
+# It requires two files under config/local/ (gitignored, never tracked):
+#   config/local/vps.json     - a copy of config/examples/vps-dryrun.example.json
+#                                with telegram token/chat_id filled in
+#   config/local/secrets.json - a copy of config/examples/secrets.example.json
+#                                with api_server username/password/jwt_secret_key
+#                                and telegram token/chat_id filled in
+#
+# Compose replaces (does not append to) the "command" list on override, so the
+# full --config layering is restated here: base -> vps -> secrets.
+#
+# The API port is published to 127.0.0.1 ONLY. It must never be published to
+# 0.0.0.0 or a public interface; reach it from an operator's machine with an
+# SSH tunnel: `ssh -L 8080:127.0.0.1:8080 sq@<vps-host>`, then browse or curl
+# `http://127.0.0.1:8080` locally. See ops/README.md.
+services:
+  freqtrade:
+    ports:
+      - "127.0.0.1:8080:8080"
+    command:
+      - trade
+      - --config
+      - /freqtrade/config/base.json
+      - --config
+      - /freqtrade/config/local/vps.json
+      - --config
+      - /freqtrade/config/local/secrets.json

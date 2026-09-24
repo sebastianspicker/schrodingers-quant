@@ -1,0 +1,9 @@
+{
+  "result": "/freqtrade/user_data/backtest_results/H1/train-base-BTC_EUR/backtest-result-2026-09-24_15-57-47.zip",
+  "pair": "BTC/EUR",
+  "start": "2020-01-01",
+  "end": "2023-01-01",
+  "trade_count": 16,
+  "final_equity": 2645.71,
+  "mtm_max_drawdown_pct": 50.6156
+}
