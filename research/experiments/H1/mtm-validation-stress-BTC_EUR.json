@@ -1,0 +1,12 @@
+{
+  "result": "/freqtrade/user_data/backtest_results/H1/validation-stress-BTC_EUR/backtest-result-2026-09-24_16-19-49.zip",
+  "pair": "BTC/EUR",
+  "start": "2023-01-01",
+  "end": "2024-07-01",
+  "trade_count": 11,
+  "notional": 1000.0,
+  "final_equity": 1558.11,
+  "net_return_pct": 55.8113,
+  "cagr_pct": 34.5365,
+  "mtm_max_drawdown_pct": 25.9301
+}

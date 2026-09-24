@@ -1,0 +1,32 @@
+[project]
+name = "schrodingers-quant"
+version = "0.1.0"
+description = "A reproducible spot-trading experiment built on Freqtrade."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+# Import roots: the project package, Freqtrade strategies, and host scripts.
+src = ["src", "user_data/strategies", "ops"]
+# Host-side scripts run on the VPS system Python (Debian 13: 3.13), not in the image.
+per-file-target-version = { "ops/**/*.py" = "py313" }
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+# Tests run inside the pinned Freqtrade image (`make test`); see tests/Dockerfile.
+testpaths = ["tests"]
+pythonpath = ["src", "user_data/strategies", "ops"]
+addopts = "-p no:cacheprovider"
+
+[dependency-groups]
+dev = [
+    "ruff==0.16.8",
+]

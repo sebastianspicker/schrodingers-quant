@@ -1,0 +1,22 @@
+[Unit]
+Description=Report %i's failure to the dead-man's-switch
+Documentation=file:///opt/schrodingers-quant/ops/README.md
+
+[Service]
+Type=oneshot
+User=sq
+WorkingDirectory=/opt/schrodingers-quant
+EnvironmentFile=/etc/schrodingers-quant/ops.env
+# %i is the instance name: with OnFailure=sq-alert@%n.service on another
+# unit, %n there expands to that unit's own full name (e.g. "sq-health.service"),
+# which becomes this unit's instance, recovered here via %i.
+ExecStart=/usr/bin/python3 /opt/schrodingers-quant/ops/health_ping.py --fail "%i failed"
+
+# Cheap hardening; unverified by systemd-analyze on this macOS development
+# machine — see ops/README.md §4.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes

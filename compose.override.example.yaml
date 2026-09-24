@@ -1,0 +1,11 @@
+# Copy to compose.override.yaml (gitignored) to layer local secrets over the
+# tracked base config. Compose replaces the whole "command" list rather than
+# appending to it, so restate it in full with the extra --config flag.
+services:
+  freqtrade:
+    command:
+      - trade
+      - --config
+      - /freqtrade/config/base.json
+      - --config
+      - /freqtrade/config/local/secrets.json

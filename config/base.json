@@ -1,0 +1,60 @@
+{
+  "$schema": "https://schema.freqtrade.io/schema.json",
+  "bot_name": "Schrödingers Quant",
+  "strategy": "H1ChannelBreakout",
+  "strategy_path": "/freqtrade/strategies",
+  "timeframe": "4h",
+  "trading_mode": "spot",
+  "margin_mode": "",
+  "dry_run": true,
+  "dry_run_wallet": 10,
+  "max_open_trades": 1,
+  "stake_currency": "EUR",
+  "stake_amount": 8,
+  "tradable_balance_ratio": 0.99,
+  "fiat_display_currency": "EUR",
+  "cancel_open_orders_on_exit": false,
+  "unfilledtimeout": {
+    "entry": 10,
+    "exit": 10,
+    "exit_timeout_count": 0,
+    "unit": "minutes"
+  },
+  "entry_pricing": {
+    "price_side": "other",
+    "use_order_book": true,
+    "order_book_top": 1,
+    "price_last_balance": 0.0,
+    "check_depth_of_market": {
+      "enabled": false,
+      "bids_to_ask_delta": 1
+    }
+  },
+  "exit_pricing": {
+    "price_side": "other",
+    "use_order_book": true,
+    "order_book_top": 1
+  },
+  "exchange": {
+    "name": "kraken",
+    "key": "",
+    "secret": "",
+    "ccxt_config": {"enableRateLimit": true},
+    "ccxt_async_config": {"enableRateLimit": true},
+    "pair_whitelist": ["BTC/EUR"],
+    "pair_blacklist": []
+  },
+  "pairlists": [{"method": "StaticPairList"}],
+  "telegram": {"enabled": false, "token": "", "chat_id": ""},
+  "api_server": {
+    "enabled": false,
+    "listen_ip_address": "127.0.0.1",
+    "listen_port": 8080,
+    "username": "",
+    "password": ""
+  },
+  "initial_state": "stopped",
+  "force_entry_enable": false,
+  "db_url": "sqlite:////freqtrade/user_data/runtime/dry-run.sqlite",
+  "internals": {"process_throttle_secs": 5}
+}

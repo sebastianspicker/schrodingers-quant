@@ -1,0 +1,9 @@
+{
+  "result": "/freqtrade/user_data/backtest_results/H1/heldout-base-BTC_EUR/backtest-result-2026-09-24_16-01-03.zip",
+  "pair": "BTC/EUR",
+  "start": "2024-07-01",
+  "end": "2026-09-20",
+  "trade_count": 14,
+  "final_equity": 1322.19,
+  "mtm_max_drawdown_pct": 35.1057
+}

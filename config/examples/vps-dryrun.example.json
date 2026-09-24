@@ -1,0 +1,45 @@
+{
+  "$schema": "https://schema.freqtrade.io/schema.json",
+  "_comment": "VPS dry-run overlay. Copy to config/local/vps.json (gitignored) and layer it between base.json and config/local/secrets.json: --config base.json --config local/vps.json --config local/secrets.json. dry_run stays true here; this file never carries credentials. api_server.listen_ip_address 0.0.0.0 is the address *inside the container*; compose.vps.example.yaml publishes only 127.0.0.1:8080 on the host, so the API is never reachable except via an SSH tunnel or from the host itself.",
+  "telegram": {
+    "enabled": true,
+    "token": "",
+    "chat_id": "",
+    "notification_settings": {
+      "status": "on",
+      "warning": "on",
+      "startup": "on",
+      "entry": "on",
+      "entry_fill": "on",
+      "entry_cancel": "on",
+      "exit": {
+        "roi": "on",
+        "emergency_exit": "on",
+        "force_exit": "on",
+        "exit_signal": "on",
+        "trailing_stop_loss": "on",
+        "stop_loss": "on",
+        "stoploss_on_exchange": "on",
+        "partial_exit": "on",
+        "custom_exit": "on"
+      },
+      "exit_fill": "on",
+      "exit_cancel": "on",
+      "protection_trigger": "on",
+      "protection_trigger_global": "on",
+      "show_candle": "off"
+    },
+    "reload": true,
+    "balance_dust_level": 0.01
+  },
+  "api_server": {
+    "enabled": true,
+    "listen_ip_address": "0.0.0.0",
+    "listen_port": 8080,
+    "verbosity": "error",
+    "enable_openapi": false,
+    "CORS_origins": [],
+    "username": "",
+    "password": ""
+  }
+}

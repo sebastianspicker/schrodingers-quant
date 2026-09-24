@@ -1,0 +1,52 @@
+# Local tooling
+.venv/
+__pycache__/
+*.py[cod]
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+.DS_Store
+.idea/
+.vscode/
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+config/local/*
+!config/local/.gitkeep
+compose.override.yaml
+compose.vps.yaml
+*.pem
+*.key
+
+# Runtime state and generated datasets/results
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.log
+# user_data/ is Freqtrade's user directory: only the strategies and the
+# bind-mount placeholders are tracked; Freqtrade creates the rest on demand.
+user_data/*
+!user_data/strategies/
+!user_data/runtime/
+user_data/runtime/*
+!user_data/runtime/.gitkeep
+!user_data/data/
+user_data/data/*
+!user_data/data/.gitkeep
+!user_data/backtest_results/
+user_data/backtest_results/*
+!user_data/backtest_results/.gitkeep
+
+# Agent coordination notes
+.agents/
+
+# Claude Code: share project settings only
+.claude/*
+!.claude/settings.json
+
+# Built GitHub Pages demo (pages/build.sh)
+build/

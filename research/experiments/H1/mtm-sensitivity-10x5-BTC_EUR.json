@@ -1,0 +1,12 @@
+{
+  "result": "/freqtrade/user_data/backtest_results/H1/sensitivity-10x5-BTC_EUR/backtest-result-2026-09-24_16-20-04.zip",
+  "pair": "BTC/EUR",
+  "start": "2020-01-01",
+  "end": "2024-07-01",
+  "trade_count": 52,
+  "notional": 1000.0,
+  "final_equity": 2095.16,
+  "net_return_pct": 109.516,
+  "cagr_pct": 17.9069,
+  "mtm_max_drawdown_pct": 35.8427
+}

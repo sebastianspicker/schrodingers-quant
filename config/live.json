@@ -1,0 +1,19 @@
+{
+  "$schema": "https://schema.freqtrade.io/schema.json",
+  "dry_run": false,
+  "initial_state": "stopped",
+  "db_url": "sqlite:////freqtrade/user_data/runtime/live.sqlite",
+  "available_capital": 10,
+  "stake_amount": 8,
+  "max_open_trades": 1,
+  "order_types": {
+    "entry": "limit",
+    "exit": "limit",
+    "emergency_exit": "market",
+    "stoploss": "market",
+    "stoploss_on_exchange": true,
+    "stoploss_on_exchange_interval": 60
+  },
+  "cancel_open_orders_on_exit": false,
+  "force_entry_enable": false
+}

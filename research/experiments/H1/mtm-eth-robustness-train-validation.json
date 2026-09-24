@@ -1,0 +1,12 @@
+{
+  "result": "/freqtrade/user_data/backtest_results/H1/eth-robustness-train-validation/backtest-result-2026-09-24_16-20-15.zip",
+  "pair": "ETH/EUR",
+  "start": "2020-01-01",
+  "end": "2024-07-01",
+  "trade_count": 25,
+  "notional": 1000.0,
+  "final_equity": 4581.54,
+  "net_return_pct": 358.1536,
+  "cagr_pct": 40.3512,
+  "mtm_max_drawdown_pct": 24.2944
+}

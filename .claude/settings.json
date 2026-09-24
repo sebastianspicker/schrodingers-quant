@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && out=$(make -s check 2>&1) || { printf 'make check failed; fix before stopping:\\n%s\\n' \"$out\" | tail -40 >&2; exit 2; }",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  }
+}

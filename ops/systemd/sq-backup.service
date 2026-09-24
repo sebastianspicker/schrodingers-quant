@@ -1,0 +1,23 @@
+[Unit]
+Description=Schrödingers Quant nightly backup (sqlite snapshot + config bundle)
+Documentation=file:///opt/schrodingers-quant/ops/README.md
+After=schrodingers-quant.service
+OnFailure=sq-alert@%n.service
+
+[Service]
+Type=oneshot
+User=sq
+WorkingDirectory=/opt/schrodingers-quant
+EnvironmentFile=/etc/schrodingers-quant/ops.env
+ExecStart=/opt/schrodingers-quant/ops/backup.sh
+TimeoutStartSec=600
+
+# Cheap hardening; unverified by systemd-analyze on this macOS development
+# machine — see ops/README.md §4. No ProtectHome=: ops/backup.sh
+# runs restic, whose cache lives under the sq user's home directory.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes

@@ -1,0 +1,66 @@
+{
+  "datadir": "/freqtrade/user_data/data/binance",
+  "entries": [
+    {
+      "exchange": "binance",
+      "file": "BTC_EUR-1d.feather",
+      "first_candle": "2020-01-03T00:00:00+00:00",
+      "last_candle": "2026-09-23T00:00:00+00:00",
+      "pair": "BTC/EUR",
+      "row_count": 2456,
+      "sha256": "80999ac28effed633c64d74cff76ffe7c0ebd13bf000a00a062ef2faf0431097",
+      "timeframe": "1d"
+    },
+    {
+      "exchange": "binance",
+      "file": "BTC_EUR-1h.feather",
+      "first_candle": "2020-01-03T08:00:00+00:00",
+      "last_candle": "2026-09-24T14:00:00+00:00",
+      "pair": "BTC/EUR",
+      "row_count": 58919,
+      "sha256": "89e19658b52283f127edfad2604e4830703e5edb98adbbad95405421898160f2",
+      "timeframe": "1h"
+    },
+    {
+      "exchange": "binance",
+      "file": "BTC_EUR-4h.feather",
+      "first_candle": "2020-01-03T08:00:00+00:00",
+      "last_candle": "2026-09-24T08:00:00+00:00",
+      "pair": "BTC/EUR",
+      "row_count": 14736,
+      "sha256": "db68e8002707a3197d33a5627e88358723313b99796e1e73852e8291772e6217",
+      "timeframe": "4h"
+    },
+    {
+      "exchange": "binance",
+      "file": "ETH_EUR-1d.feather",
+      "first_candle": "2020-01-03T00:00:00+00:00",
+      "last_candle": "2026-09-23T00:00:00+00:00",
+      "pair": "ETH/EUR",
+      "row_count": 2456,
+      "sha256": "6077d80667b419abef5f0feaea377a56acfccec4510959daaae8b592b0b26fe9",
+      "timeframe": "1d"
+    },
+    {
+      "exchange": "binance",
+      "file": "ETH_EUR-1h.feather",
+      "first_candle": "2020-01-03T08:00:00+00:00",
+      "last_candle": "2026-09-24T14:00:00+00:00",
+      "pair": "ETH/EUR",
+      "row_count": 58919,
+      "sha256": "49a37d86e9e16de4e366b1450ea7e5e0136d9ddceaa1a23a8efaee0329c277d6",
+      "timeframe": "1h"
+    },
+    {
+      "exchange": "binance",
+      "file": "ETH_EUR-4h.feather",
+      "first_candle": "2020-01-03T08:00:00+00:00",
+      "last_candle": "2026-09-24T08:00:00+00:00",
+      "pair": "ETH/EUR",
+      "row_count": 14736,
+      "sha256": "a4160d5fb992d3f84affa2ec6c3a6b27aabff75dce7af9a38af90cd67958830a",
+      "timeframe": "4h"
+    }
+  ],
+  "generated_at": "2026-09-24T15:54:52.961610+00:00"
+}
