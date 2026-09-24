@@ -1,0 +1,100 @@
+name: schrodingers-quant
+
+x-freqtrade-image: &freqtrade-image freqtradeorg/freqtrade:2026.8@sha256:4d23160b501d2b34579e76f57ad75edfa274967cd0dd824ff1c1b86d8c166ab4
+
+x-tool: &tool
+  image: *freqtrade-image
+  entrypoint: []
+  environment:
+    TZ: UTC
+    PYTHONPATH: /workspace/src
+    SQ_FREQTRADE_IMAGE: *freqtrade-image
+
+services:
+  freqtrade:
+    image: *freqtrade-image
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    cpus: 1.5
+    mem_limit: 2g
+    environment:
+      TZ: UTC
+      NUMEXPR_MAX_THREADS: "2"
+    volumes:
+      - ./config:/freqtrade/config:ro
+      - ./user_data/strategies:/freqtrade/strategies:ro
+      - ./user_data/runtime:/freqtrade/user_data/runtime
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+    command:
+      - trade
+      - --config
+      - /freqtrade/config/base.json
+
+  jev-worker:
+    image: *freqtrade-image
+    profiles: ["jev"]
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 10s
+    cpus: 0.5
+    mem_limit: 256m
+    entrypoint: []
+    command:
+      - python
+      - -m
+      - sq.jev.worker
+      - --dir
+      - /jev-runtime
+      - --provider
+      - "null"
+    environment:
+      TZ: UTC
+      PYTHONPATH: /workspace/src
+      JEV_API_KEY: ${JEV_API_KEY:-}
+    volumes:
+      - ./src:/workspace/src:ro
+      - ./user_data/runtime/jev:/jev-runtime
+
+  tools:
+    <<: *tool
+    profiles: ["tools"]
+    working_dir: /workspace
+    volumes:
+      - .:/workspace:ro
+      - ./config:/freqtrade/config:ro
+      - ./user_data/strategies:/freqtrade/strategies:ro
+      - ./user_data/runtime:/freqtrade/user_data/runtime
+
+  research:
+    <<: *tool
+    profiles: ["tools"]
+    working_dir: /freqtrade
+    volumes:
+      - ./src:/workspace/src:ro
+      - ./user_data:/freqtrade/user_data
+      - ./user_data/strategies:/freqtrade/strategies:ro
+      - ./research:/freqtrade/research
+
+  test:
+    <<: *tool
+    profiles: ["tools"]
+    build:
+      context: tests
+      dockerfile: Dockerfile
+      args:
+        FREQTRADE_IMAGE: *freqtrade-image
+    image: schrodingers-quant-test:local
+    working_dir: /workspace
+    volumes:
+      - .:/workspace:ro
+      - ./user_data/strategies:/freqtrade/strategies:ro
+    command:
+      - python
+      - -m
+      - pytest
+      - -q

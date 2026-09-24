@@ -1,0 +1,9 @@
+{
+  "result": "/freqtrade/user_data/backtest_results/H1/heldout-stress-BTC_EUR/backtest-result-2026-09-24_16-01-08.zip",
+  "pair": "BTC/EUR",
+  "start": "2024-07-01",
+  "end": "2026-09-20",
+  "trade_count": 14,
+  "final_equity": 1150.74,
+  "mtm_max_drawdown_pct": 40.8053
+}

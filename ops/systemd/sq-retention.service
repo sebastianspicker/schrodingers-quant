@@ -1,0 +1,22 @@
+[Unit]
+Description=Schrödingers Quant weekly retention (OHLCV cache, dangling images)
+Documentation=file:///opt/schrodingers-quant/ops/README.md
+After=schrodingers-quant.service
+OnFailure=sq-alert@%n.service
+
+[Service]
+Type=oneshot
+User=sq
+WorkingDirectory=/opt/schrodingers-quant
+EnvironmentFile=/etc/schrodingers-quant/ops.env
+ExecStart=/opt/schrodingers-quant/ops/retention.sh --apply
+TimeoutStartSec=300
+
+# Cheap hardening; unverified by systemd-analyze on this macOS development
+# machine — see ops/README.md §4.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes

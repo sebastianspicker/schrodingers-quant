@@ -1,0 +1,17 @@
+{
+  "actual_end": "2026-09-20T00:00:00+00:00",
+  "actual_start": "2024-07-01T00:00:00+00:00",
+  "buy_hold_cagr_pct": 7.5603,
+  "buy_hold_gross_return_pct": 18.75,
+  "buy_hold_max_drawdown_pct": 52.1825,
+  "buy_hold_net_return_pct": 17.5654,
+  "candle_count": 4867,
+  "end_close": 70004.2,
+  "fee": 0.005,
+  "generated_at": "2026-09-24T16:01:09.705737+00:00",
+  "pair": "BTC/EUR",
+  "requested_end": "2026-09-20",
+  "requested_start": "2024-07-01",
+  "start_close": 58950.92,
+  "timeframe": "4h"
+}
