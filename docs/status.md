@@ -93,7 +93,7 @@ Deferred means in scope but triggered by evidence, not dropped
 | --- | --- | --- |
 | G-0 | Scaffold and checks | Reached |
 | G-1 | Integrated software (strategy, ops, live tooling, Jev mechanism) tested locally | Reached |
-| G-2 | Reproducible release: committed, CI on a remote | Reached once CI passes on GitHub |
+| G-2 | Reproducible release: committed, CI on a remote | Reached (2026-09-24, first GitHub Actions run green) |
 | G-3 | Unattended Debian operation: soak passed | Not reached |
 | G-4 | Live execution: pilot drills passed | Not reached |
 | G-5 | Economic evidence: positive forward record after costs | Not reached |
