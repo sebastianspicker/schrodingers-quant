@@ -26,8 +26,7 @@ from typing import Any
 import ccxt
 from freqtrade.enums import RunMode
 
-from sq.config import load_config
-from sq.paths import TRACKED_BASE_CONFIG
+from sq.config import TRACKED_BASE_CONFIG, load_config
 
 DEFAULT_AMOUNT_TOLERANCE = 1e-6
 DEFAULT_FEE_TOLERANCE = 1e-6

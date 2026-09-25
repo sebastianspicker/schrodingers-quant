@@ -12,7 +12,7 @@ help:
 	  'validate-live  Validate base + credential-free config/live.json overlay (no exchange contact)' \
 	  'validate-vps   Validate base + VPS overlay + example secrets (tracked files only)' \
 	  'ci             Run check, validate, validate-live, validate-vps, and test in order' \
-	  'research       Research commands: make research ARGS="train" (see research/run.sh)' \
+	  'research       Research commands: make research ARGS="train" (see src/sq/research)' \
 	  'preflight      Read-only Kraken feasibility check: make preflight ARGS="--pair BTC/EUR --stake 8 --stoploss -0.20"' \
 	  'reconcile      Read-only DB vs Kraken reconciliation (needs config/local/secrets.json)' \
 	  'backup         Consistent SQLite + config backup (ops/backup.sh)' \
@@ -29,7 +29,7 @@ check:
 	docker compose config --quiet
 	docker compose -f compose.yaml -f compose.vps.example.yaml config --quiet
 	docker compose -f compose.yaml -f compose.override.example.yaml config --quiet
-	shellcheck ops/*.sh research/run.sh pages/build.sh
+	shellcheck ops/*.sh pages/build.sh
 
 format:
 	uv run --locked ruff format .
@@ -60,7 +60,7 @@ validate-vps:
 ci: check validate validate-live validate-vps test
 
 research:
-	./research/run.sh $(ARGS)
+	docker compose run --rm research python -m sq.research $(ARGS)
 
 preflight:
 	docker compose run --rm tools python -m sq.live.preflight $(ARGS)

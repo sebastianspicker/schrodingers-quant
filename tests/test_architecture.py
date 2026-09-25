@@ -1,4 +1,4 @@
-"""Import-boundary and provenance-single-source contract tests.
+"""Import-boundary, order-safety and provenance-single-source contract tests.
 
 AST-scans `src/sq`, `user_data/strategies` and `ops/*.py` for their imports
 (no need to actually run them), so these checks hold even for modules whose
@@ -38,28 +38,28 @@ def _imports(modules: set[str], target: str) -> bool:
     return any(m == target or m.startswith(target + ".") for m in modules)
 
 
-# --- Jev isolation: no exchange, no execution, no config loading ---------
-
-JEV_ISOLATED_FILES = [
-    SRC_SQ / "jev" / "protocol.py",
-    SRC_SQ / "jev" / "worker.py",
-    SRC_SQ / "jev" / "providers.py",
-]
+# --- Jev isolation: the worker package sees no exchange, config or pandas --
 
 
-def test_jev_isolated_modules_never_import_exchange_or_execution_code():
-    forbidden = ("ccxt", "freqtrade", "sq.live", "sq.config")
-    for path in JEV_ISOLATED_FILES:
-        modules = imported_modules(path)
-        for target in forbidden:
-            assert not _imports(modules, target), f"{path} imports {target}"
+def test_jev_package_imports_only_stdlib_and_itself():
+    # sq.jev is what the credential-free jev-worker container runs. Offline
+    # analysis of its records lives in sq.research.jev_evaluation instead.
+    for path in sorted((SRC_SQ / "jev").rglob("*.py")):
+        for module in imported_modules(path):
+            root = module.split(".")[0]
+            if root in sys.stdlib_module_names or _imports({module}, "sq.jev"):
+                continue
+            raise AssertionError(f"{path} imports {module!r}; sq.jev is stdlib + sq.jev only")
 
 
-def test_jev_protocol_is_stdlib_only():
-    modules = imported_modules(SRC_SQ / "jev" / "protocol.py")
-    for module in modules:
-        root = module.split(".")[0]
-        assert root in sys.stdlib_module_names, f"protocol.py imports non-stdlib {module!r}"
+# --- research is a leaf: runtime code never depends on it ----------------
+
+
+def test_only_research_imports_research():
+    for path in sorted(SRC_SQ.rglob("*.py")):
+        if path.is_relative_to(SRC_SQ / "research"):
+            continue
+        assert not _imports(imported_modules(path), "sq.research"), f"{path} imports sq.research"
 
 
 # --- ops/*.py: host-side systemd scripts, stdlib-only ---------------------
@@ -102,6 +102,29 @@ def test_only_live_and_proxy_check_import_ccxt():
         modules = imported_modules(path)
         if _imports(modules, "ccxt"):
             assert path in allowed, f"{path} imports ccxt but is not in the allowlist"
+
+
+# --- nothing outside Freqtrade places, cancels or edits an order ---------
+
+ORDER_MUTATING_FRAGMENTS = (
+    "createorder",
+    "createlimit",
+    "createmarket",
+    "cancelorder",
+    "cancelall",
+    "editorder",
+)
+PROJECT_CODE_DIRS = (SRC_SQ, OPS_DIR, STRATEGIES_DIR, REPO_ROOT / "research" / "strategies")
+
+
+def test_no_project_code_names_an_order_mutating_method():
+    # Normalized source text, so create_order, createOrder and cancel_all_orders
+    # are all caught, in calls, getattr strings and comments alike.
+    for directory in PROJECT_CODE_DIRS:
+        for path in sorted(directory.rglob("*.py")):
+            source = path.read_text(encoding="utf-8").replace("_", "").lower()
+            for fragment in ORDER_MUTATING_FRAGMENTS:
+                assert fragment not in source, f"{path} names an order-mutating method"
 
 
 # --- the pinned image digest lives in exactly one live-config place -------

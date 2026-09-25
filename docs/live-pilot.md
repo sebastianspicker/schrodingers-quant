@@ -1,61 +1,78 @@
 # €10 live execution pilot: runbook
 
-Status: tooling built, **live trading not authorized**. This document is the
-runbook for the live pilot (open work in [status](status.md)) once the
-maintainer explicitly authorizes it. Nothing in this repository places,
-cancels, or edits an order; `sq.live.preflight` and `sq.live.reconcile` are
-read-only, and `config/live.json` starts `stopped`.
+Status: tooling built, **live trading not authorized**. This is the runbook for
+the live pilot (open work in [status](status.md)) once the maintainer
+explicitly authorizes it. Nothing in this repository places, cancels or edits
+an order: `sq.live.preflight` and `sq.live.reconcile` are read-only, and
+`config/live.json` starts `stopped`.
 
-## Prerequisites, before any credential exists
+## In short
+
+- **Purpose.** The pilot tests real execution on Kraken (orders, fills,
+  exchange-side stops, restarts, key revocation) with a stake of €8 on about
+  €10 of capital. It is not evidence of profitability.
+- **Order of work.** Meet every prerequisite, layer the live config, run the
+  four drills once each, reconcile at least daily, and record everything.
+  Stop on any of the stop conditions.
+- **Worst case per trade, as measured so far.** With a −20 % stop and an
+  assumed 0.40 % fee on both sides, public market data on 2026-09-24 put the
+  worst-case loss at about €1.65 for an €8 stake and €2.06 for a €10 stake.
+  That check used no account, so it does not confirm the real fee tier,
+  balance or order handling ([Preflight evidence](#7-preflight-evidence)).
+- **Scaling.** Continuing or enlarging the pilot is a written decision (an
+  ADR), never automatic.
+
+## 1. Prerequisites, before any credential exists
 
 - Explicit authorization from the maintainer to fund and run a live pilot.
-- An isolated Kraken account or subaccount, funded with roughly €10–15 (a small
-  margin above the €10 stake covers Kraken's cost minimum and fees on both
-  legs; see the preflight evidence below).
-- An API key scoped to **query + trade permissions only**. No withdrawal
-  permission. IP-restricted to the VPS's address if Kraken's key UI allows it.
+- An isolated Kraken account or subaccount, funded with roughly €10–15. The
+  small margin above the €10 stake covers Kraken's cost minimum and fees on
+  both legs (see [Preflight evidence](#7-preflight-evidence)).
+- An API key scoped to **query and trade permissions only**. No withdrawal
+  permission. Restrict it to the VPS's IP address if Kraken's key settings
+  allow it.
 - The H1 decision (`research/hypotheses/H1.md`,
   [ADR-0005](adr/0005-h1-go-after-sizing-correction.md)) has reached a "go".
 - The unattended dry-run soak on the VPS has passed
   ([soak checklist](../ops/soak-checklist.md)): control, health, backups and
   recovery drills rehearsed.
-- `make preflight` (`sq.live.preflight`) exits 0 (feasible) for the pair, stake and
-  stoploss actually configured, run against the live account (so it also
-  reads the account's real fee tier and EUR balance, not just market
-  defaults).
-- Preflight assumes Kraken's default convention: the entry (buy) fee is
-  charged in the base currency (see `assess_feasibility`'s docstring). This
-  assumption must be confirmed against the first real fill (check the fee
-  currency on the actual filled order) before trusting later feasibility
-  runs or reconciliation.
+- `make preflight` (`sq.live.preflight`) exits 0 (feasible) for the pair, stake
+  and stoploss actually configured, run against the live account, so it also
+  reads the account's real fee tier and EUR balance, not just market defaults.
+- Preflight assumes Kraken's default convention: the entry (buy) fee is charged
+  in the base currency, BTC (see `assess_feasibility`'s docstring). Confirm this
+  against the first real fill, by checking the fee currency on the filled
+  order, before trusting later feasibility runs or reconciliation.
 
 Credentials are never committed. They belong only in an ignored
 `config/local/secrets.json` (see `compose.override.example.yaml`) or the
 equivalent path on the VPS.
 
-## Config layering on the VPS
+## 2. Config layering on the VPS
 
-Layer, in order, later overrides earlier:
+The config is built from layers, in this order; later layers override earlier
+ones:
 
-1. `config/base.json` — tracked, credential-free spot dry-run defaults.
-2. `config/local/vps.json` — the VPS overlay (Telegram, API server), from
+1. `config/base.json`: tracked, credential-free spot dry-run defaults.
+2. `config/local/vps.json`: the VPS overlay (Telegram, API server), copied from
    `config/examples/vps-dryrun.example.json`.
-3. `config/live.json` — tracked, credential-free live overlay: `dry_run:
-   false`, `initial_state: stopped`, the live `db_url` (`live.sqlite`),
-   `available_capital: 10`, `stake_amount: 8`, `max_open_trades: 1`,
-   `order_types.stoploss_on_exchange: true`, `force_entry_enable: false`.
+3. `config/live.json`: the tracked, credential-free live overlay. It sets
+   `dry_run: false`, `initial_state: stopped`, the live `db_url`
+   (`live.sqlite`), `available_capital: 10`, `stake_amount: 8`,
+   `max_open_trades: 1`, `order_types.stoploss_on_exchange: true` and
+   `force_entry_enable: false`.
 
    With `stake_amount: 8` and `available_capital: 10`, after roughly one full
-   stop-out the remaining balance can fall below the €8 stake; Freqtrade then
-   stops opening new trades on its own (insufficient stake), with no
-   automatic top-up. This is an intended hard cap of the pilot's size, not a
-   bug: see `AGENTS.md` on automatic capital increases.
-4. `config/local/secrets.json` (ignored) — exchange `key`/`secret`, and
-   Telegram/API credentials.
+   stop-out the remaining balance can fall below the €8 stake. Freqtrade then
+   stops opening new trades on its own (insufficient stake), with no automatic
+   top-up. This is an intended hard cap on the pilot's size, not a bug: see
+   `AGENTS.md` on automatic capital increases.
+4. `config/local/secrets.json` (ignored): the exchange `key` and `secret`, and
+   the Telegram and API credentials.
 
-`config/live.json` is **only ever applied explicitly** as one of these
-layers; it is never part of the default `make validate` / `make up` path
-(enforced by `tests/live/test_live_overlay.py`). Check the merged layers first:
+`config/live.json` is **only ever applied explicitly** as one of these layers.
+It is never part of the default `make validate` / `make up` path (enforced by
+`tests/live/test_live_overlay.py`). Check the merged layers first:
 
 ```sh
 docker compose run --rm tools python -m sq.config \
@@ -63,105 +80,120 @@ docker compose run --rm tools python -m sq.config \
   --config /freqtrade/config/live.json --config /freqtrade/config/local/secrets.json
 ```
 
-To go live, edit the ignored `compose.vps.yaml` on the VPS so its `command`
-list inserts `--config /freqtrade/config/live.json` before the secrets layer,
-then `docker compose up -d freqtrade` (the supervised service, with its restart
-policy, not a foreground `docker compose run`). The bot starts `stopped`; the
-operator sends `/start` only after preflight passes. To return to dry-run,
-remove the line and `up -d` again.
+To go live, edit the ignored `compose.vps.yaml` on the VPS so that its
+`command` list inserts `--config /freqtrade/config/live.json` before the
+secrets layer. Then run `docker compose up -d freqtrade` (the supervised
+service, with its restart policy, not a foreground `docker compose run`). The
+bot starts `stopped`; the operator sends `/start` only after preflight passes.
+To return to dry-run, remove the line and run `up -d` again.
 
-With the live overlay the trade DB is `user_data/runtime/live.sqlite`. Backups
-snapshot it next to `dry-run.sqlite`; a restore must then name it:
+With the live overlay, the trade database is `user_data/runtime/live.sqlite`.
+Backups snapshot it next to `dry-run.sqlite`, and a restore must then name it:
 `ops/restore.sh --local <backup-dir> --db live.sqlite`.
 
-## Drill checklist
+## 3. Drill checklist
 
 Run each drill once, on the funded live account, with a full evidence record
-(commands, timestamps, screenshots/log excerpts) filed under
-`research/experiments/` or an ADR. Do not repeat a drill "until it works" without recording the
-failures too.
+(commands, timestamps, screenshots or log excerpts) filed under
+`research/experiments/` or in an ADR. Do not repeat a drill "until it works"
+without recording the failures too.
 
 1. **Forced round trip.** Temporarily set `force_entry_enable: true` in a
-   local, uncommitted overlay (never in `config/live.json`), issue one forced
-   entry via the Telegram/API `forceentry` command, let it fill, then let it
-   exit (signal, ROI, or a manual `forceexit`). Set `force_entry_enable` back
-   to `false` and confirm no further forced entries are accepted.
+   local, uncommitted overlay (never in `config/live.json`). Issue one forced
+   entry with the Telegram or API `forceentry` command, let it fill, then let it
+   exit (signal, ROI, or a manual `forceexit`). Set `force_entry_enable` back to
+   `false` and confirm no further forced entries are accepted.
 2. **Restart with an open position.** With a position open, restart the
-   container (`docker compose restart freqtrade` or equivalent). Verify
-   Freqtrade reconciles the open trade from the DB and that the stoploss
-   order still exists on Kraken after restart (check via the Kraken UI or
-   `make reconcile`).
-3. **Kill during an open entry order.** Send `kill -9` to the Freqtrade
-   process (or force-kill the container) while an entry order is unfilled or
-   partially filled. Restart, then run `make reconcile` and
-   confirm it reports a match (or a specific, expected mismatch that
-   Freqtrade's own restart reconciliation should have already resolved).
+   container (`docker compose restart freqtrade` or equivalent). Verify that
+   Freqtrade reconciles the open trade from the database, and that the stoploss
+   order still exists on Kraken after the restart (check in the Kraken UI or
+   with `make reconcile`).
+3. **Kill during an open entry order.** Send `kill -9` to the Freqtrade process
+   (or force-kill the container) while an entry order is unfilled or partially
+   filled. Restart, then run `make reconcile` and confirm it reports a match, or
+   a specific, expected mismatch that Freqtrade's own restart reconciliation
+   should already have resolved.
 4. **Key revocation.** Revoke the API key on Kraken while the bot is running.
-   Confirm the bot reports clear errors (logs, Telegram/health endpoint if
-   enabled) without corrupting the trade DB: no silent state loss, no crash
-   loop that hides the failure.
+   Confirm the bot reports clear errors (logs, and Telegram or the health
+   endpoint if enabled) without corrupting the trade database: no silent state
+   loss, and no crash loop that hides the failure.
 
-## Reconciliation schedule
+## 4. Reconciliation schedule
 
-Run `make reconcile` (`sq.live.reconcile`) at least once daily while the live
-pilot is active (for example a VPS cron entry or systemd timer),
-and immediately after any of the drills above. It is read-only: it never calls
-an order-mutating ccxt method. It exits 0 on a clean match, 3 on any
-mismatch, 1 on error (e.g. missing credentials, unreachable exchange).
+Run `make reconcile` (`sq.live.reconcile`) at least once a day while the live
+pilot is active (for example from a VPS cron entry or a systemd timer), and
+immediately after each drill above. It is read-only: it never calls a ccxt
+method that changes orders. It exits 0 on a clean match, 3 on any mismatch,
+and 1 on an error (for example missing credentials or an unreachable exchange).
 
 ```sh
 make reconcile   # base + live + config/local/secrets.json, in the tools container
 ```
 
-Record, for each run: timestamp, exit code, the full JSON report, and, on a
-mismatch, the remediation taken before the next entry is allowed.
+For each run, record the timestamp, the exit code, the full JSON report and,
+on a mismatch, the remediation taken before the next entry is allowed.
 
-## Evidence to record throughout the pilot
+## 5. Evidence to record throughout the pilot
 
 - Every preflight run (JSON report, exit code, date).
 - Every reconciliation run (JSON report, exit code, date).
 - Each drill's timeline and outcome.
-- Daily or per-trade: entry/exit fills, fees paid, realized P&L, drawdown.
-- Any manual intervention (forced entry/exit, key rotation, restart) with the
-  reason.
+- Daily or per trade: entry and exit fills, fees paid, realized profit and
+  loss, drawdown.
+- Any manual intervention (forced entry or exit, key rotation, restart), with
+  the reason.
 
-## Stop conditions
+## 6. Stop conditions
 
-Stop the pilot (set `force_entry_enable: false` if not already, then
-`/stopentry` or stop the container) and do not resume without the
-maintainer's explicit review if any of the following occurs:
+Stop the pilot (set `force_entry_enable: false` if it is not already, then
+send `/stopentry` or stop the container), and do not resume without the
+maintainer's explicit review, if any of the following occurs:
 
-- `make preflight` or `make reconcile` reports
-  infeasibility or a mismatch that is not immediately understood and
-  resolved.
-- A drill in the checklist above fails (stop order missing after restart, DB
-  corruption, silent error swallowing).
-- Realized losses approach the funded capital's loss budget agreed with the
-  maintainer before the pilot started.
-- Kraken account, API, or key state changes unexpectedly (e.g. permissions
-  change, unexpected balance change not explained by the bot's own trades).
-- Any doubt about whether the bot's live orders match its logged/DB state.
+- `make preflight` or `make reconcile` reports infeasibility or a mismatch that
+  is not immediately understood and resolved.
+- A drill in the checklist above fails (stop order missing after a restart,
+  database corruption, errors swallowed silently).
+- Realized losses approach the loss budget for the funded capital, agreed with
+  the maintainer before the pilot started.
+- The Kraken account, API or key state changes unexpectedly (for example a
+  permissions change, or a balance change not explained by the bot's own
+  trades).
+- Any doubt about whether the bot's live orders match its logged or database
+  state.
 
 Continuing or scaling the pilot past its initial scope is a decision record
 (ADR), never an automatic action (`AGENTS.md`: no automatic capital
 increases).
 
-## Preflight evidence
+## 7. Preflight evidence
 
-Public Kraken market data (`load_markets`, `fetch_order_book`), no
-credentials, recorded 2026-09-24 against the pinned image
-(`freqtradeorg/freqtrade:2026.8@sha256:4d23160b501d2b34579e76f57ad75edfa274967cd0dd824ff1c1b86d8c166ab4`)
-via the then-current `scripts/live/preflight.py` (now `sq.live.preflight`, same code;
-rerun with `make preflight ARGS="--pair BTC/EUR --stake <8|10> --stoploss -0.20"`):
+Recorded 2026-09-24 from public Kraken market data (`load_markets`,
+`fetch_order_book`), without credentials, against the pinned image
+(`freqtradeorg/freqtrade:2026.8@sha256:4d23160b501d2b34579e76f57ad75edfa274967cd0dd824ff1c1b86d8c166ab4`),
+using the then-current `scripts/live/preflight.py` (now `sq.live.preflight`,
+same code). Rerun with
+`make preflight ARGS="--pair BTC/EUR --stake <8|10> --stoploss -0.20"`.
 
-Both runs report `"feasible": true, "reasons": []`. Without credentials the
-preflight assumes Kraken Pro's base-tier taker fee of 0.40% (ccxt's bundled
-default of 0.26% is outdated), labeled in `fee_source`. The real account fee
-tier can only be read once a live-scoped key exists, and preflight must be
-re-run against it before the pilot starts. No account balance was checked
-(no credentials); `"eur_balance": null`.
+Both runs report `"feasible": true, "reasons": []` and exit code `0`.
 
-### Stake €8, stoploss -20%
+| | Stake €8 | Stake €10 |
+| --- | --- | --- |
+| BTC/EUR price used | €74,221.3 | €74,221.5 |
+| BTC bought | 0.00010778 | 0.00013473 |
+| BTC left to sell after the entry fee | 0.00010734 | 0.00013419 |
+| Stop price (−20 %) | €59,377.04 | €59,377.20 |
+| Value at the stop | €6.37 | €7.97 |
+| Worst-case loss (fees + stop move + rounding dust) | €1.65 | €2.06 |
+| Kraken minimums | 0.00005 BTC and €0.45 | 0.00005 BTC and €0.45 |
+
+Without credentials, preflight assumes Kraken Pro's base-tier taker fee of
+0.40 % (ccxt's bundled default of 0.26 % is outdated), labeled in
+`fee_source`. The real account fee tier can only be read once a live-scoped key
+exists, and preflight must be re-run against it before the pilot starts. No
+account balance was checked (no credentials): `"eur_balance": null`.
+
+<details>
+<summary>Full report, stake €8, stoploss −20 %</summary>
 
 ```json
 {
@@ -201,7 +233,10 @@ re-run against it before the pilot starts. No account balance was checked
 
 Exit code: `0`.
 
-### Stake €10, stoploss -20%
+</details>
+
+<details>
+<summary>Full report, stake €10, stoploss −20 %</summary>
 
 ```json
 {
@@ -241,14 +276,36 @@ Exit code: `0`.
 
 Exit code: `0`.
 
+</details>
+
 ### Reading this evidence
 
-At an assumed 0.40% taker fee on both legs and a -20% stoploss, both an €8 and
-a €10 stake on BTC/EUR clear Kraken's amount (5e-05 BTC) and cost (€0.45)
-minimums on both entry and a full stop-out, with worst-case loss (fees +
-stoploss move + rounding dust) of about €1.65 (stake €8) or €2.06 (stake
-€10) at the prices observed. This is public market-data feasibility only: it
-does not validate the account's real fee tier, real balance, order
-acceptance, partial fills, or exchange-side stoploss behavior. Those require
-an authenticated preflight run and the drill checklist once a live-scoped
-key exists.
+At an assumed 0.40 % taker fee on both legs and a −20 % stoploss, both an €8
+and a €10 stake on BTC/EUR clear Kraken's amount (5e-05 BTC) and cost (€0.45)
+minimums on both the entry and a full stop-out. The worst-case loss (fees, the
+stoploss move and rounding dust) is about €1.65 for an €8 stake or €2.06 for a
+€10 stake, at the prices observed. This is feasibility on public market data
+only. It does not validate the account's real fee tier, real balance, order
+acceptance, partial fills, or exchange-side stoploss behavior. Those require an
+authenticated preflight run and the drill checklist once a live-scoped key
+exists.
+
+## Glossary
+
+| Term | Meaning here |
+| --- | --- |
+| Pilot | The first live run with real money, capped at about €10, to test execution. |
+| Overlay | A config file layered on top of `config/base.json`; later layers override earlier ones. |
+| Stake | The amount put into one trade (€8 in the live overlay). |
+| Stop-out / stoploss | An exit triggered when the price falls to the stop (−20 % from entry). |
+| Exchange-side stop (`stoploss_on_exchange`) | A stop order held by Kraken itself, so it still works if the bot is down. |
+| Forced entry / exit | A trade opened or closed by an operator command instead of a strategy signal. |
+| Preflight | A read-only check that a stake can enter and still exit at the stop after fees, minimums and precision. |
+| Reconciliation | A read-only comparison of the bot's trade database with the exchange. |
+| Base currency | The asset being bought, here BTC; the quote currency is EUR. |
+| Taker fee | The fee for an order that fills immediately against the order book. |
+| Dust | A tiny leftover amount that is too small to sell because of precision limits. |
+| Precision | The smallest step an exchange allows for an amount or price. |
+| ccxt | The library Freqtrade uses to talk to exchanges. |
+| Soak | The 14-day unattended dry-run on the VPS that must pass first. |
+| ADR | Architecture decision record: a dated, written decision in `docs/adr/`. |

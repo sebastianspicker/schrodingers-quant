@@ -8,7 +8,7 @@ from freqtrade.configuration.config_validation import validate_config_consistenc
 from freqtrade.enums import RunMode
 from freqtrade.resolvers import StrategyResolver
 
-from sq.paths import TRACKED_BASE_CONFIG
+TRACKED_BASE_CONFIG = Path(__file__).resolve().parents[2] / "config" / "base.json"
 
 PLACEHOLDER_JWT_SECRET_KEY = "REPLACE_WITH_RANDOM_32_CHARS_KEY"
 MIN_JWT_SECRET_KEY_LENGTH = 32

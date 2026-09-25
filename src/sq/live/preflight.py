@@ -22,8 +22,7 @@ from freqtrade.enums import RunMode
 from freqtrade.exchange.exchange_utils import amount_to_precision
 from freqtrade.exchange.kraken import Kraken
 
-from sq.config import load_config
-from sq.paths import TRACKED_BASE_CONFIG
+from sq.config import TRACKED_BASE_CONFIG, load_config
 
 # --- Pure computation ------------------------------------------------------
 

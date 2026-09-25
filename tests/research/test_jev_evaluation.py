@@ -1,4 +1,5 @@
-"""Tests for sq.jev.evaluate: matching, leakage exclusion, and summaries.
+"""Tests for sq.research.jev_evaluation: matching, leakage exclusion, and
+summaries.
 
 Uses plain lists of trade/assessment dicts; no Freqtrade backtest export and
 no network.
@@ -8,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from sq.jev import evaluate
+from sq.research import jev_evaluation as evaluate
 
 BASE_TIME = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 

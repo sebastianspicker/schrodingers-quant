@@ -7,9 +7,11 @@ path, and it must never carry credentials.
 
 import json
 import re
+from pathlib import Path
 
 from sq import config
-from sq.paths import REPO_ROOT
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 LIVE_CONFIG = REPO_ROOT / "config" / "live.json"
 

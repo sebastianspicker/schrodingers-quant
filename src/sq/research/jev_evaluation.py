@@ -17,9 +17,11 @@ README.md; treat unmatched or ambiguous trades conservatively (they count as
 "lost for lack of a timely assessment", never as an assumed approval).
 
 Net return is measured against a fixed notional (`--wallet`), consistent with
-H1's fixed-stake sizing (ADR-0005) and sq.research.mtm_drawdown. If
-`--candles` is given, marked-to-market drawdown is also reported for both
-trade sets, reusing `sq.research.mtm_drawdown.equity_curve`.
+H1's fixed-stake sizing (ADR-0005) and sq.research.metrics. If `--candles` is
+given, marked-to-market drawdown is also reported for both trade sets,
+reusing `sq.research.metrics.equity_curve`.
+
+Run as `python -m sq.research jev-evaluate` (see `sq.research.__main__`).
 """
 
 import argparse
@@ -30,7 +32,7 @@ from pathlib import Path
 import pandas as pd
 
 from sq.jev.protocol import parse_utc, read_jsonl
-from sq.research.mtm_drawdown import equity_curve, max_drawdown_pct
+from sq.research.metrics import equity_curve, max_drawdown_pct
 
 DEFAULT_MAX_LAG_HOURS = 8.0
 
@@ -248,11 +250,10 @@ def evaluate(
     }
 
 
-# --- CLI -----------------------------------------------------------------
+# --- CLI (subcommand of `python -m sq.research`, see __main__.py) --------
 
 
-def build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
+def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--trades", required=True, help="Backtest trades export (.zip or directory)"
     )
@@ -265,12 +266,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--pair", default="BTC/EUR")
     parser.add_argument("--timeframe", default="4h")
     parser.add_argument("--out")
-    return parser
 
 
-def main() -> None:
-    args = build_arg_parser().parse_args()
-
+def run(args: argparse.Namespace) -> None:
     trades = load_trades(args.trades)
     assessments = load_assessments(args.assessments)
 
@@ -290,7 +288,3 @@ def main() -> None:
     print(text)
     if args.out:
         Path(args.out).write_text(text + "\n")
-
-
-if __name__ == "__main__":
-    main()

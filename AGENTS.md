@@ -34,16 +34,16 @@ Architecture, boundaries and dependency rules: `docs/architecture.md`.
   source is part of Jev's candidate id.
 - `src/sq/`: the project package, run in the pinned image. `config` covers
   layered config and validation, `live` the read-only preflight and
-  reconciliation, `jev` the file protocol, worker, providers and evaluation,
-  `research` the backtest summaries, benchmarks, manifest, proxy check and
-  drawdown.
-- `research/`: hypotheses, research configs, experiment records,
-  research-only strategies, `run.sh`.
+  reconciliation, `jev` the credential-free worker and its file protocol,
+  `research` the H1 research pipeline (`make research ARGS=…`, experiment
+  definition in `sq/research/h1.py`), metrics and the offline Jev evaluation.
+- `research/`: hypotheses, research configs, experiment records and
+  research-only strategies (data, no code).
 - `ops/`: everything on the Debian host: health ping, backup/restore,
   retention, systemd units, runbook, soak checklist. It uses stdlib Python and
   POSIX sh.
 - `pages/`: the static GitHub Pages demo; `pages/build.sh` adds the recorded
-  H1 equity curves (`research/run.sh equity-curves`).
+  H1 equity curves (`make research ARGS=equity-curves`).
 - `tests/`: pytest in the pinned image (`tests/Dockerfile`); mirrors the code.
 - `docs/`: `status.md` (state, open work), `architecture.md`, `operations.md`,
   `live-pilot.md`, `jev.md`, `adr/`.

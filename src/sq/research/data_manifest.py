@@ -5,7 +5,6 @@ the SHA-256 of each feather file in the data directory, so a rerun can prove
 it used the same data (see docs/adr/0002-research-data-proxy.md).
 """
 
-import argparse
 import json
 import re
 from datetime import UTC, datetime
@@ -15,9 +14,14 @@ import pandas as pd
 
 from sq.research.provenance import sha256_file
 
-DEFAULT_DATADIR = Path("/freqtrade/user_data/data/binance")
-DEFAULT_OUT = Path("/freqtrade/research/data-manifest.json")
 
+def feather_path(datadir: Path, pair: str, timeframe: str) -> Path:
+    """The feather file Freqtrade stores `pair`'s `timeframe` candles in."""
+    base, quote = pair.split("/")
+    return datadir / f"{base}_{quote}-{timeframe}.feather"
+
+
+# The inverse of feather_path, for describing whatever files the datadir holds.
 FEATHER_NAME_RE = re.compile(
     r"^(?P<base>[A-Z0-9]+)_(?P<quote>[A-Z0-9]+)-(?P<timeframe>\w+)\.feather$"
 )
@@ -55,27 +59,9 @@ def build_manifest(datadir: Path, exchange: str) -> dict:
     }
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--datadir",
-        type=Path,
-        default=DEFAULT_DATADIR,
-        help="Directory of feather OHLCV files (default: user_data/data/binance).",
-    )
-    parser.add_argument("--exchange", default="binance")
-    parser.add_argument(
-        "--out",
-        type=Path,
-        default=DEFAULT_OUT,
-        help="Output path (default: research/data-manifest.json).",
-    )
-    args = parser.parse_args()
-
-    manifest = build_manifest(args.datadir, args.exchange)
-    args.out.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
-    print(f"Wrote {args.out} ({len(manifest['entries'])} files).")
-
-
-if __name__ == "__main__":
-    main()
+def write_manifest(datadir: Path, out: Path, exchange: str = "binance") -> dict:
+    manifest = build_manifest(datadir, exchange)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    print(f"Wrote {out} ({len(manifest['entries'])} files).")
+    return manifest
