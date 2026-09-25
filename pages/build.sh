@@ -1,6 +1,6 @@
 #!/bin/sh
 # Assemble the GitHub Pages demo in build/pages: the static files in pages/
-# plus the recorded H1 equity curves (research/run.sh equity-curves).
+# plus the recorded H1 equity curves (make research ARGS=equity-curves).
 set -eu
 
 ROOT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)

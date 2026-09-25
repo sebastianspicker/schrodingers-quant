@@ -12,23 +12,20 @@ failure is recorded) but exits non-zero so callers can stop instead of
 continuing to costed evaluation.
 """
 
-import argparse
 import json
-import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
 import ccxt
 import pandas as pd
 
+from sq.research.data_manifest import feather_path
+
 PAIRS = ["BTC/EUR", "ETH/EUR"]
 TIMEFRAMES = ["4h", "1d"]
 KRAKEN_LIMIT = 720
 CORRELATION_MIN = 0.95
 MEDIAN_DEVIATION_MAX_BPS = 50.0
-
-DEFAULT_DATADIR = Path("/freqtrade/user_data/data/binance")
-DEFAULT_OUT = Path("/freqtrade/research/experiments/H1/proxy-check.json")
 
 
 def fetch_kraken_ohlcv(pair: str, timeframe: str, limit: int) -> pd.DataFrame:
@@ -40,9 +37,7 @@ def fetch_kraken_ohlcv(pair: str, timeframe: str, limit: int) -> pd.DataFrame:
 
 
 def load_binance_ohlcv(datadir: Path, pair: str, timeframe: str) -> pd.DataFrame:
-    base, quote = pair.split("/")
-    path = datadir / f"{base}_{quote}-{timeframe}.feather"
-    df = pd.read_feather(path)
+    df = pd.read_feather(feather_path(datadir, pair, timeframe))
     return df.set_index("date")
 
 
@@ -86,19 +81,16 @@ def passes(result: dict) -> bool:
     )
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--datadir", type=Path, default=DEFAULT_DATADIR)
-    parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
-    args = parser.parse_args()
-
+def run(datadir: Path, out: Path) -> int:
+    """Run the proxy check and write --out; returns 0 if every pair/timeframe
+    passes the gate, 1 otherwise (the result is still written on failure)."""
     results: dict[str, dict[str, dict]] = {}
     all_pass = True
     for pair in PAIRS:
         results[pair] = {}
         for timeframe in TIMEFRAMES:
             kraken = fetch_kraken_ohlcv(pair, timeframe, KRAKEN_LIMIT)
-            binance = load_binance_ohlcv(args.datadir, pair, timeframe)
+            binance = load_binance_ohlcv(datadir, pair, timeframe)
             result = compare(kraken, binance)
             result["ok"] = passes(result)
             all_pass = all_pass and result["ok"]
@@ -112,11 +104,7 @@ def main() -> int:
         "results": results,
         "all_pass": all_pass,
     }
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(output, indent=2, sort_keys=True) + "\n")
-    print(f"Wrote {args.out}. all_pass={all_pass}")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(output, indent=2, sort_keys=True) + "\n")
+    print(f"Wrote {out}. all_pass={all_pass}")
     return 0 if all_pass else 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())

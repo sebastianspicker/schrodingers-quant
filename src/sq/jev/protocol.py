@@ -1,11 +1,12 @@
 """Stdlib-only file contract for Jev's candidates/assessments JSONL files.
 
 Used by `sq.jev.worker` (reads candidates.jsonl, writes assessments.jsonl) and
-`sq.jev.evaluate` (reads both, offline). The writer of candidates and reader of
-assessments is `user_data/strategies/H1JevShadow.py`, which never imports `sq`
-(its class source is part of every candidate_id) and keeps its own copy of these
-names; tests/jev/test_protocol.py checks that the two agree. Stdlib-only, so the
-worker stays free of exchange code (tests/test_architecture.py).
+`sq.research.jev_evaluation` (reads both, offline). The writer of candidates
+and reader of assessments is `user_data/strategies/H1JevShadow.py`, which
+never imports `sq` (its class source is part of every candidate_id) and keeps
+its own copy of these names; tests/jev/test_protocol.py checks that the two
+agree. Stdlib-only, so the worker stays free of exchange code
+(tests/test_architecture.py).
 """
 
 import json
@@ -32,8 +33,9 @@ def read_jsonl(path: Path, *, strict: bool = False) -> Iterator[dict]:
     By default, a malformed line is skipped and logged, never raised: Jev's
     file I/O must never crash the strategy process or the worker loop. Pass
     `strict=True` to raise `json.JSONDecodeError` instead — used by
-    `sq.jev.evaluate`, an offline analysis tool where silently dropping a
-    malformed input line would be a worse failure mode than stopping.
+    `sq.research.jev_evaluation`, an offline analysis tool where silently
+    dropping a malformed input line would be a worse failure mode than
+    stopping.
     """
     if not path.exists():
         return

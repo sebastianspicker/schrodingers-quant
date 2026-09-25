@@ -2,7 +2,7 @@
 
 Reads the recorded `mtm-*.json` summaries of an experiment, reloads each
 backtest result they name, and rebuilds the marked-to-market equity with
-`mtm_drawdown.equity_curve`. Buy-and-hold is marked on the same closes with the
+`metrics.equity_curve`. Buy-and-hold is marked on the same closes with the
 same fee on entry and exit; its headline figures are the recorded
 `benchmark-*.json` values (base fee, the comparator H1's decision rule uses).
 Both curves are sampled at the last 4h close of each UTC
@@ -13,7 +13,6 @@ Only equity values (in EUR on the fixed notional), trade dates and trade
 returns are written; no prices.
 """
 
-import argparse
 import json
 from pathlib import Path
 
@@ -21,16 +20,12 @@ import pandas as pd
 from freqtrade.data.btanalysis import load_backtest_data
 from freqtrade.data.history import load_pair_history
 
-from sq.research.mtm_drawdown import equity_curve, max_drawdown_pct
+from sq.research import h1
+from sq.research.metrics import equity_curve, max_drawdown_pct
 
-RUNS = {
-    "train": "mtm-train-{cost}-BTC_EUR.json",
-    "validation": "mtm-validation-{cost}-BTC_EUR.json",
-    "heldout": "mtm-heldout-{cost}-BTC_EUR.json",
-}
-FEES = {"base": 0.005, "stress": 0.01}
-EXPERIMENT = Path("/freqtrade/research/experiments/H1")
-DATADIR = Path("/freqtrade/user_data/data/binance")
+# The demo shows H1's BTC/EUR runs, keyed "<period>-<cost>" (e.g. "train-base").
+RUNS = h1.TRAIN_RUNS + h1.VALIDATION_RUNS + h1.HELDOUT_RUNS
+COST_LABELS = {h1.FEE_BASE: "base", h1.FEE_STRESS: "stress"}
 
 
 def daily(series: pd.Series) -> list[float]:
@@ -82,30 +77,22 @@ def build_run(record: dict, benchmark: dict, candles: pd.DataFrame, fee: float) 
     }
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--experiment", type=Path, default=EXPERIMENT)
-    parser.add_argument("--datadir", type=Path, default=DATADIR)
-    parser.add_argument("--out", type=Path, required=True)
-    args = parser.parse_args()
-
-    candles = load_pair_history(pair="BTC/EUR", timeframe="4h", datadir=args.datadir)
+def build_equity_curves(experiment: Path, datadir: Path, out: Path) -> None:
+    candles = load_pair_history(pair=h1.PAIR, timeframe=h1.TIMEFRAME, datadir=datadir)
+    out_pair = h1.PAIR.replace("/", "_")
     runs: dict[str, dict] = {}
-    for period, pattern in RUNS.items():
-        benchmark = json.loads((args.experiment / f"benchmark-{period}-BTC_EUR.json").read_text())
-        for cost, fee in FEES.items():
-            record = json.loads((args.experiment / pattern.format(cost=cost)).read_text())
-            runs[f"{period}-{cost}"] = build_run(record, benchmark, candles, fee)
+    for run in RUNS:
+        benchmark_file = experiment / f"benchmark-{run.period}-{out_pair}.json"
+        benchmark = json.loads(benchmark_file.read_text())
+        record = json.loads((experiment / f"mtm-{run.name}.json").read_text())
+        key = f"{run.period}-{COST_LABELS[run.fee]}"
+        runs[key] = build_run(record, benchmark, candles, run.fee)
     payload = {
-        "pair": "BTC/EUR",
-        "timeframe": "4h",
-        "notional_eur": 1000,
+        "pair": h1.PAIR,
+        "timeframe": h1.TIMEFRAME,
+        "notional_eur": int(h1.NOTIONAL),
         "source": "research/experiments/H1 (mtm-*.json and the backtest results they name)",
         "runs": runs,
     }
-    args.out.write_text(json.dumps(payload, separators=(",", ":")) + "\n")
-    print(f"wrote {args.out}")
-
-
-if __name__ == "__main__":
-    main()
+    out.write_text(json.dumps(payload, separators=(",", ":")) + "\n")
+    print(f"wrote {out}")
