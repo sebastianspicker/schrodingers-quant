@@ -3,21 +3,29 @@
 # Schrödingers Quant
 
 [![CI](https://github.com/sebastianspicker/schrodingers-quant/actions/workflows/ci.yml/badge.svg)](https://github.com/sebastianspicker/schrodingers-quant/actions/workflows/ci.yml)
-[![Demo](https://img.shields.io/badge/demo-GitHub%20Pages-2a78d6)](https://sebastianspicker.github.io/schrodingers-quant/)
+[![Demo](https://img.shields.io/badge/demo-GitHub%20Pages-1d3f8f)](https://sebastianspicker.github.io/schrodingers-quant/)
 
 The bot is both trading and not trading until you look at the config. Out of
 the box, it is **not trading**.
 
-Schrödingers Quant is a cryptocurrency spot trading bot built on
-[Freqtrade](https://www.freqtrade.io/), set up for Kraken and a small Debian VPS.
-It is meant to run unattended around the clock. The repository contains a
-strategy, the research that decided whether to run it, and the
-operations around it: health checks, backups, restore, systemd units and
-runbooks.
+## In short
 
-The tracked configuration is dry-run only, has no credentials, and starts the
-bot in the `stopped` state. Nothing in this repository places a real order
-unless an operator adds keys, applies the live overlay and sends `/start`.
+- **What it is.** A cryptocurrency spot trading bot built on
+  [Freqtrade](https://www.freqtrade.io/), set up for Kraken and a small Debian
+  VPS, and meant to run unattended around the clock. The repository holds one
+  strategy (H1), the research that decided whether to run it, and the
+  operations around it: health checks, backups, restore, systemd units and
+  runbooks.
+- **What it does as shipped.** Nothing with real money. The tracked
+  configuration runs in dry-run (simulated orders only), contains no exchange
+  credentials, and starts the bot in the `stopped` state. A real order needs
+  an operator to add keys, apply the live overlay and send `/start`.
+- **What the evidence says.** H1 passed the test written for it before the
+  data was run, by a narrow margin and on simulated fills. The verdict is
+  *GO, marginal*: enough for forward paper trading and a €10 live execution
+  test, not for more capital ([experiment record](research/experiments/H1/record.md)).
+- **Where it stands.** Dry-run only. Nothing has been deployed, funded or
+  traded live ([status](docs/status.md)).
 
 > [!WARNING]
 > This is an experiment, not investment advice. The strategy passed its
@@ -27,15 +35,17 @@ unless an operator adds keys, applies the live overlay and sends `/start`.
 ## Screenshot tour
 
 The [interactive demo](https://sebastianspicker.github.io/schrodingers-quant/)
-shows the recorded backtests of the strategy, H1. It runs in your browser from a
-static JSON file. There is no bot or exchange behind it.
+replays the recorded backtests of H1. It runs in your browser from a static
+JSON file; there is no bot or exchange behind it.
 
 ### 1. Compare H1 with buy-and-hold
 
 H1 buys BTC/EUR when a 4h close breaks the 20-day high and sells when it breaks
-the 10-day low. The demo marks both H1 and buy-and-hold to market on every
-close, fees included, on a fixed €1,000 stake. Grey bands show when H1 holds a
-position. [Open the held-out run](https://sebastianspicker.github.io/schrodingers-quant/?period=heldout&cost=base).
+the 10-day low. The demo values both H1 and buy-and-hold at every close
+(marked to market), fees included, on a fixed €1,000 stake. A strip under the
+chart shows when H1 holds a position, and the hatched space after the held-out
+run is the forward test that has not happened yet.
+[Open the held-out run](https://sebastianspicker.github.io/schrodingers-quant/?period=heldout&cost=base).
 
 ![Held-out period: H1 ends at €1,398 against €1,186 for buy-and-hold, with a smaller drawdown](pages/assets/screenshots/heldout.png)
 
@@ -50,7 +60,7 @@ drawdowns, not to beat the market in every period.
 ### 3. Stress the costs
 
 Switch to 1.0 % per side to see how much fees and slippage matter. Hover over
-the chart or use the arrow keys to read the equity on any day.
+the chart, or use the arrow keys, to read the equity on any day.
 [Open the stress run](https://sebastianspicker.github.io/schrodingers-quant/?period=heldout&cost=stress).
 
 ![Equity chart with a tooltip showing both curves on 15 Nov 2025](pages/assets/screenshots/tooltip.png)
@@ -71,31 +81,33 @@ checks, records or watches.
 
 The demo also works on a phone and follows your system's dark mode.
 
-<img src="pages/assets/screenshots/mobile-dark.png" alt="The demo on a phone in dark mode, showing the train period" width="300">
+<img src="pages/assets/screenshots/mobile-dark.png" alt="The demo on a phone in dark mode, showing the held-out period" width="300">
 
 ## What's in it
 
-- **A tested strategy.** `H1ChannelBreakout` is a long-only 20/10-day channel
-  breakout on BTC/EUR 4h with a −20 % catastrophe stop and Freqtrade protections.
-  It was [predeclared](research/hypotheses/H1.md), checked for lookahead bias,
-  and evaluated once on held-out data.
-  The result is GO, but only just, and the [experiment record](research/experiments/H1/record.md)
+- **A tested strategy.** `H1ChannelBreakout` is a long-only channel breakout
+  on BTC/EUR 4h candles: it enters on a break of the 20-day high, exits on a
+  break of the 10-day low, and has a −20 % catastrophe stop plus Freqtrade's
+  protections. It was [predeclared](research/hypotheses/H1.md), checked for
+  lookahead bias, and evaluated once on held-out data. The result is GO, but
+  only just, and the [experiment record](research/experiments/H1/record.md)
   explains why that is weak evidence.
-- **Safe defaults.** Spot only, dry-run, no credentials, `initial_state: stopped`.
-  A test fails if the tracked config drifts from that, or if project code
-  names an order-creating exchange method.
-- **Operations for one small VPS.** A health check that pings a dead-man's switch,
-  consistent SQLite backups with optional restic, a restore that
-  leaves the bot stopped, image pruning, hardened systemd units, and a
-  [Debian 13 runbook](ops/README.md) with a
+- **Safe defaults.** Spot only, dry-run, no credentials,
+  `initial_state: stopped`. A test fails if the tracked config drifts from
+  that, or if project code names an exchange method that creates orders.
+- **Operations for one small VPS.** A health check that pings a dead-man's
+  switch, consistent SQLite backups with optional restic, a restore that leaves
+  the bot stopped, image pruning, hardened systemd units, a
+  [Debian 13 runbook](ops/README.md) and a
   [14-day soak checklist](ops/soak-checklist.md).
-- **Read-only live tooling.** `make preflight` checks whether a stake can
-  enter and still exit at the stop after fees, minimums and precision.
-  `make reconcile` compares the trade database with Kraken. Neither can place or
-  cancel an order.
+- **Read-only live tooling.** `make preflight` checks whether a stake can enter
+  and still exit at the stop after fees, minimums and precision.
+  `make reconcile` compares the trade database with Kraken. Neither can place
+  or cancel an order.
 - **An optional model filter (Jev).** A worker without exchange credentials can
   approve or reject entry candidates. Exits never wait for it, and a missing
-  answer blocks the entry. There is no real model provider yet; see [Jev](docs/jev.md).
+  answer blocks the entry. There is no real model provider yet; see
+  [Jev](docs/jev.md).
 
 ## Quick start
 
@@ -129,7 +141,7 @@ The strategy and exchange are configuration, not architecture:
   import project code, so any Freqtrade install can load them.
 - Before trusting a new strategy, write a hypothesis in `research/hypotheses/`
   with its rules, periods and pass criteria, then run the held-out period once.
-  `research/run.sh` shows how H1 was evaluated.
+  `make research` (`src/sq/research/`) shows how H1 was evaluated.
 
 The live tooling (`sq.live`) and the research data proxy assume Kraken with EUR
 pairs. Other exchanges need changes there and a fresh preflight run.
@@ -141,8 +153,8 @@ pairs. Other exchanges need changes there and a fresh preflight run.
 | `compose.yaml` | The pinned Freqtrade image and every service: bot, Jev worker, tools, research, tests |
 | `config/` | Freqtrade config layers: `base.json` (dry-run), `live.json` (explicit live overlay), `examples/`, ignored `local/` |
 | `user_data/strategies/` | `H1ChannelBreakout` (frozen), `H1JevShadow` (optional model filter) |
-| `src/sq/` | Project package: config validation, read-only live tools, Jev worker and evaluation, research tools |
-| `research/` | Hypotheses, research configs, experiment records, `run.sh` |
+| `src/sq/` | Project package: config validation, read-only live tools, Jev worker, research pipeline and analysis |
+| `research/` | Hypotheses, research configs, experiment records, research-only strategies |
 | `ops/` | Host side: health ping, backup and restore, retention, systemd units, runbooks |
 | `pages/` | The GitHub Pages demo and its screenshots |
 | `tests/` | pytest suite, run inside the pinned Freqtrade image |
@@ -153,9 +165,9 @@ VPS.
 
 ## Project status
 
-Dry-run only. Nothing has been deployed, funded or traded live. The next
-step is a 14-day soak on a VPS, which also serves as H1's forward paper test.
-See [status](docs/status.md) for what has been verified and what hasn't.
+Dry-run only. Nothing has been deployed, funded or traded live. The next step
+is a 14-day soak on a VPS, which also serves as H1's forward paper test. See
+[status](docs/status.md) for what has been verified and what hasn't.
 
 ## Contributing and security
 
@@ -166,3 +178,19 @@ Never paste API keys, account exports or trade databases into an issue.
 ## License
 
 [MIT](LICENSE)
+
+## Glossary
+
+| Term | Meaning here |
+| --- | --- |
+| Dry-run | Freqtrade's simulation mode: the bot runs its strategy on live market data but sends no orders. |
+| `stopped` state | The bot process runs but opens no trades until an operator sends `/start`. |
+| Live overlay | `config/live.json`, the config layer that switches off dry-run. It is only applied explicitly. |
+| Held-out period | Data (2024-07-01 → 2026-09-20) kept aside and run once, after the strategy was frozen. |
+| Marked to market | Valuing an open position at the current price on every close, not only when it is sold. |
+| Drawdown | The fall from the highest equity reached so far to a later low, as a percentage. |
+| Catastrophe stop | H1's fixed −20 % stop from the entry price, a last-resort exit rather than the normal one. |
+| Forward paper trading | Running the strategy in dry-run on data that did not exist when it was chosen. |
+| Soak | A 14-day unattended dry-run on the VPS, with drills, before any live money. |
+| Dead-man's switch | An external monitor that alerts when the bot's regular health ping stops arriving. |
+| Preflight / reconciliation | Read-only checks against Kraken: can a stake enter and exit, and does the trade database match the exchange? |

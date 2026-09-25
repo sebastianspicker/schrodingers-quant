@@ -1,7 +1,8 @@
 # Architecture
 
 Why the system has this shape: [ADRs](adr/README.md) (the layout is
-[ADR-0006](adr/0006-one-package-one-runtime-definition.md)). What exists and
+[ADR-0006](adr/0006-one-package-one-runtime-definition.md), the research
+pipeline and Jev boundary [ADR-0007](adr/0007-research-pipeline-in-python.md)). What exists and
 what is verified: [status](status.md).
 
 ## Principle
@@ -22,7 +23,7 @@ only when a test or drill shows a gap in Freqtrade
 | Strategies | `user_data/strategies/` | inside the bot and backtests | `H1JevShadow` appends `runtime/jev/candidates.jsonl` | nothing else |
 | Project package `sq` | `src/sq/` | one-shot `tools`/`research` containers; `sq.jev.worker` in `jev-worker` | outputs named on the command line | see dependency rules |
 | Jev worker | `sq.jev.worker`, service `jev-worker` (profile `jev`) | own container, no credentials | appends `runtime/jev/assessments.jsonl` | a model provider (none real yet) |
-| Research | `research/` (records, configs, `run.sh`), `sq.research` (code) | development machine, service `research` | `research/experiments/`, `user_data/{data,backtest_results}` | Binance/Kraken public data |
+| Research | `research/` (hypotheses, configs, records), `sq.research` (code) | development machine, service `research` | `research/experiments/`, `user_data/{data,backtest_results}` | Binance/Kraken public data |
 | Host operations | `ops/` | Debian 13 host, systemd | `user_data/runtime/backups/` | Docker, dead-man's switch, restic |
 | Demo site | `pages/`, `pages/build.sh`, `.github/workflows/pages.yml` | GitHub Pages, static | nothing at runtime | reads `research/experiments/H1/equity-curves.json` at build time |
 
@@ -30,25 +31,31 @@ only when a test or drill shows a gap in Freqtrade
 
 | Module | Responsibility | Entry point |
 | --- | --- | --- |
-| `sq.paths` | Repository layout (`REPO_ROOT`, tracked base config) | — |
-| `sq.config` | Load layered Freqtrade config; tracked-default invariants; credential checks for deployable layers; strategy load | `python -m sq.config` (`make validate*`) |
+| `sq.config` | Tracked base config path; load layered Freqtrade config; tracked-default invariants; credential checks for deployable layers; strategy load | `python -m sq.config` (`make validate*`) |
 | `sq.live.preflight` | Read-only: can a stake enter and still exit at the stop after fees and precision? Exit 0 feasible, 2 infeasible, 1 error | `make preflight` |
 | `sq.live.reconcile` | Read-only: trade DB vs Kraken order history and balance. Exit 0 match, 3 mismatch, 1 error | `make reconcile` |
 | `sq.jev.protocol` | The Jev file contract (names, JSONL, UTC timestamps, decisions) | — |
 | `sq.jev.providers`, `sq.jev.worker` | Assess recorded candidates under a timeout; single instance; append assessments | `python -m sq.jev.worker` |
-| `sq.jev.evaluate` | Offline baseline-vs-filter comparison using only assessments available before entry | `python -m sq.jev.evaluate` |
-| `sq.research.*` | Data manifest, proxy check, backtest summary, buy-and-hold benchmark, marked-to-market drawdown, provenance, equity curves for the demo | `research/run.sh` |
+| `sq.research.h1` | H1's experiment definition: pair, periods, fees, notional, strategies, run and record names | — |
+| `sq.research.pipeline` | Runs Freqtrade (backtesting, bias analyses) in the research container and writes every record: `<run>.json`, `mtm-<run>.json`, benchmarks, data manifest, proxy check, demo equity curves | `python -m sq.research <subcommand>` (`make research ARGS=…`) |
+| `sq.research.metrics` | Pure metrics: fixed-notional equity curve, marked-to-market drawdown, buy-and-hold, backtest summary | — |
+| `sq.research.provenance` | Image reference and file hashes stamped on every record | — |
+| `sq.research.data_manifest`, `proxy_check`, `equity_curves` | Proxy-data provenance, Binance-vs-Kraken check (ADR-0002), demo curves that must reproduce the record | via the pipeline |
+| `sq.research.jev_evaluation` | Offline baseline-vs-filter comparison using only assessments available before entry | `make research ARGS="jev-evaluate …"` |
 
 ### Dependency rules
 
 Enforced by `tests/test_architecture.py`:
 
-- `sq.jev.protocol`, `sq.jev.providers` and `sq.jev.worker` import only the
-  standard library and `sq.jev`: no ccxt, Freqtrade, `sq.live` or `sq.config`.
-  The worker cannot see exchange code or credentials.
-- Only `sq.live` and `sq.research.proxy_check` import ccxt. No project module
-  names an order-creating, -cancelling or -editing method (source guards in
-  `tests/live/`).
+- Every module in `sq.jev` imports only the standard library and `sq.jev`:
+  no ccxt, Freqtrade, pandas, `sq.live`, `sq.config` or `sq.research`. The
+  worker container cannot see exchange code or credentials. Analysis of Jev's
+  records is research and lives in `sq.research.jev_evaluation`.
+- Only `sq.live` and `sq.research.proxy_check` import ccxt.
+- No project Python (`src/`, `ops/`, both strategy directories) names an
+  order-creating, -cancelling or -editing method.
+- `sq.research` depends on `sq.jev.protocol` (to read records), never the
+  reverse; nothing outside `sq.research` imports it.
 - Strategies import Freqtrade, pandas, the standard library and each other,
   never `sq`. The trading container does not mount `src/`. That keeps the
   strategies loadable by any Freqtrade instance and keeps the class source,
@@ -70,7 +77,7 @@ anchor) and of how every in-image command runs:
 | `freqtrade` | default | `config` ro → `/freqtrade/config`, strategies ro → `/freqtrade/strategies`, `user_data/runtime` → `/freqtrade/user_data/runtime` | `make up`, systemd |
 | `jev-worker` | `jev` | `src` ro, `user_data/runtime/jev` → `/jev-runtime` | opt-in shadow runs |
 | `tools` | `tools` | repo ro → `/workspace`, config, strategies, runtime | `make validate*`, `preflight`, `reconcile` |
-| `research` | `tools` | `src` ro, `user_data` → `/freqtrade/user_data`, `research` → `/freqtrade/research`, strategies ro | `research/run.sh` |
+| `research` | `tools` | `src` ro, `user_data` → `/freqtrade/user_data`, `research` → `/freqtrade/research`, strategies ro | `make research` (`python -m sq.research`) |
 | `test` | `tools` | repo ro only; image built from `tests/Dockerfile` | `make test` |
 
 Container paths are a contract: configs name `/freqtrade/strategies` and
@@ -106,8 +113,9 @@ name it.
   entry only on a fresh `approve`. Anything else, including errors, blocks the
   entry and never affects exits. The mode defaults to `off`.
 - **Research:** Binance OHLCV (Kraken proxy, ADR-0002) → Freqtrade
-  backtests → `sq.research` summaries with provenance (image, strategy file
-  hash, data manifest hash) → `research/experiments/<id>/`.
+  backtests run by `sq.research.pipeline` → Freqtrade and marked-to-market
+  summaries with provenance (image, strategy file hash, data manifest hash) →
+  `research/experiments/<id>/` → the demo's `equity-curves.json`.
 - **Operations:** the health timer checks `/api/v1/health` freshness and disk
   usage, then pings a dead-man's switch. The backup timer snapshots every
   `runtime/*.sqlite` and the Jev JSONL records with `sqlite3 .backup`,
