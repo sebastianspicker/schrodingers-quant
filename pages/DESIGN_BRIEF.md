@@ -302,3 +302,43 @@ regenerate the README screenshots.
 - The hard-coded §2 figures duplicate `record.md`; generating them from the
   mtm records at build time would remove the drift risk.
 - The phone legend wraps to three lines on the equity chart.
+
+## 4. Redesign as a research note (2026-09-26)
+
+Supersedes sections 2 and 3 where they differ. The maintainer judged the
+"experiment record" version too generic and too promotional for the intended
+readers, quants and researchers: an editorial serif headline ("with the
+drawdown left in"), a large verdict block with a gauge, oversized return
+figures, § numbering and dated marginalia, a hatched "not yet observed"
+region, feature cards and a type colophon. These are common signs of
+generated design, and they gave a GO decision more weight than 14 trades
+support.
+
+- **Voice.** No slogan; the title is the specification. A summary gives the
+  held-out numbers next to buy-and-hold and then the three things that limit
+  them: t ≈ 0.73 for the mean trade, two trades carrying the result, and the
+  validation period where buy-and-hold returned four times as much. The
+  "Limitations" section replaces "Why it is still weak evidence" and adds the
+  benchmark mismatch (H1 is in cash about 60 % of the time).
+- **Statistics.** The results block is a tearsheet. Net return, CAGR and
+  marked-to-market drawdown are recorded values (`equity-curves.json` now also
+  carries `buy_hold_cagr_pct` from the benchmark records). Volatility, Sharpe
+  (r_f = 0), Sortino, return over drawdown, beta and correlation come from the
+  daily series. Trade count, mean and s.d., t-statistic, profit factor, mean win
+  and loss, the two-largest split and median holding time come from the trade
+  list. All of these are computed in `app.js` and labelled descriptive, not part
+  of the decision rule.
+- **Type and colour.** System sans with tabular figures; Commit Mono only for
+  code and chart axes (the serif font was removed, 82 KB). White and near-black
+  grounds, a single blue for H1, dashed grey for buy-and-hold, red only for the
+  K2 limit and the K2 margin. Text contrast is at least 4.7:1 in both themes.
+- **Removed.** The verdict gauge, the forward hatch (open question 5 is reversed
+  because it read as a promise), the headline readout, the § marks and margin
+  column, the feature cards and the type credit.
+- **Unchanged.** URL and data contracts, `build.sh`, chart interaction and
+  keyboard access, the trade ledger, the system diagrams.
+
+Figures typed into the HTML (summary, decision table, limitations) carry
+`data-check="<run>:<metric>"`; `tests/test_pages.py` fails when any of them
+disagrees with `equity-curves.json` at the precision shown. The favicon and
+README badge use the new H1 blue, `#1f4e9c`.

@@ -44,7 +44,11 @@ def test_build_run_raises_when_net_return_disagrees_with_the_record(monkeypatch)
         "net_return_pct": 15.0,
         "mtm_max_drawdown_pct": 0.0,
     }
-    benchmark = {"buy_hold_net_return_pct": 0.0, "buy_hold_max_drawdown_pct": 0.0}
+    benchmark = {
+        "buy_hold_net_return_pct": 0.0,
+        "buy_hold_cagr_pct": 0.0,
+        "buy_hold_max_drawdown_pct": 0.0,
+    }
 
     with pytest.raises(SystemExit):
         equity_curves.build_run(record, benchmark, make_candles(), fee=0.005)
@@ -62,9 +66,14 @@ def test_build_run_accepts_a_matching_record(monkeypatch):
         "cagr_pct": 999.9,
         "mtm_max_drawdown_pct": 0.0,
     }
-    benchmark = {"buy_hold_net_return_pct": 0.0, "buy_hold_max_drawdown_pct": 0.0}
+    benchmark = {
+        "buy_hold_net_return_pct": 0.0,
+        "buy_hold_cagr_pct": 0.0,
+        "buy_hold_max_drawdown_pct": 0.0,
+    }
 
     run = equity_curves.build_run(record, benchmark, make_candles(), fee=0.005)
 
     assert run["net_return_pct"] == 10.0
     assert run["trades"][0]["return_pct"] == 10.0
+    assert run["buy_hold_cagr_pct"] == 0.0

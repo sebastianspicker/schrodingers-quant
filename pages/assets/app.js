@@ -76,15 +76,13 @@ function drawChart(container, run, opts) {
   const narrow = width < 520;
   const m = {
     top: 14,
-    right: opts.future ? 4 : narrow ? 60 : 72,
+    right: narrow ? 60 : 72,
     bottom: opts.spans ? 38 : 24,
     left: narrow ? 52 : 64,
   };
   const w = width - m.left - m.right;
   const h = height - m.top - m.bottom;
-  // The held-out run ends where the record ends; the space after it is the forward test.
-  const futureW = opts.future ? Math.max(narrow ? 56 : 72, w * 0.08) : 0;
-  const plotW = w - futureW;
+  const plotW = w;
   const svg = el("svg", { viewBox: `0 0 ${width} ${height}` }, container);
   const art = el("g", { "aria-hidden": "true" }, svg);
   const n = run.dates.length;
@@ -92,7 +90,7 @@ function drawChart(container, run, opts) {
   const all = series.flatMap((s) => s.values);
   let lo = Math.min(...all, opts.floor ?? Infinity);
   let hi = Math.max(...all, opts.ceil ?? -Infinity);
-  const ticks = niceTicks(lo, hi, narrow ? Math.max(2, opts.tickCount - 1) : opts.tickCount);
+  const ticks = niceTicks(lo, hi, narrow ? Math.max(3, opts.tickCount - 1) : opts.tickCount);
   lo = Math.min(lo, ticks[0]);
   hi = Math.max(hi, ticks[ticks.length - 1]);
   const x = (i) => m.left + (i / (n - 1)) * plotW;
@@ -106,19 +104,6 @@ function drawChart(container, run, opts) {
   el("line", { class: "baseline", x1: m.left, x2: m.left + plotW, y1: y(opts.baseline), y2: y(opts.baseline) }, art);
   for (const [i, label] of yearTicks(run.dates)) {
     el("text", { class: "tick", x: x(i), y: height - 6, "text-anchor": "middle" }, art).textContent = label;
-  }
-
-  if (futureW) {
-    const id = `hatch-${container.id}`;
-    const pattern = el("pattern", { id, width: 6, height: 6, patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)" }, el("defs", {}, art));
-    el("line", { class: "hatch-line", x1: 0, y1: 0, x2: 0, y2: 6 }, pattern);
-    el("rect", { x: x(n - 1), y: m.top, width: futureW, height: h, fill: `url(#${id})` }, art);
-    el("line", { class: "future-edge", x1: x(n - 1), x2: x(n - 1), y1: m.top, y2: m.top + h }, art);
-    if (opts.futureLabel) {
-      const label = el("text", { class: "future-label", x: x(n - 1) + futureW - 6, y: m.top + 12, "text-anchor": "end" }, art);
-      el("tspan", { x: x(n - 1) + futureW - 6 }, label).textContent = "not yet";
-      el("tspan", { x: x(n - 1) + futureW - 6, dy: 14 }, label).textContent = "observed";
-    }
   }
 
   if (opts.spans) {
@@ -228,22 +213,71 @@ function hideTooltip() {
   tooltip.hidden = true;
 }
 
-function renderReadout(run) {
-  const root = document.getElementById("readout");
-  const winners = run.trades.filter((t) => t.return_pct > 0).length;
+const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+const sd = (xs) => {
+  const m = mean(xs);
+  return Math.sqrt(xs.reduce((a, b) => a + (b - m) ** 2, 0) / (xs.length - 1));
+};
+const fixed = (v, digits = 2) => minus(v.toFixed(digits));
+
+// Descriptive statistics from the daily series (last 4h close per UTC day).
+function dailyStats(values) {
+  const r = values.slice(1).map((v, i) => v / values[i] - 1);
+  const m = mean(r);
+  const s = sd(r);
+  const downside = Math.sqrt(r.reduce((a, x) => a + Math.min(x, 0) ** 2, 0) / r.length);
+  return { r, vol: s * Math.sqrt(365) * 100, sharpe: (m / s) * Math.sqrt(365), sortino: (m / downside) * Math.sqrt(365) };
+}
+
+function renderStats(run) {
+  const root = document.getElementById("stats");
   const set = (field, text) => {
-    root.querySelector(`[data-field="${field}"]`).textContent = text;
+    root.querySelector(`[data-f="${field}"]`).textContent = text;
   };
+  const h1 = dailyStats(run.strategy);
+  const bh = dailyStats(run.buy_hold);
+  const cov = mean(h1.r.map((x, i) => (x - mean(h1.r)) * (bh.r[i] - mean(bh.r)))) * (h1.r.length / (h1.r.length - 1));
+  const beta = cov / sd(bh.r) ** 2;
+  const corr = cov / (sd(h1.r) * sd(bh.r));
+
   set("ret", pct(run.net_return_pct));
-  set("hold-ret", pct(run.buy_hold_net_return_pct));
+  set("b-ret", pct(run.buy_hold_net_return_pct));
+  set("cagr", pct(run.cagr_pct));
+  set("b-cagr", pct(run.buy_hold_cagr_pct));
   set("dd", pct(run.mtm_max_drawdown_pct, false));
-  set("hold-dd", pct(run.buy_hold_max_drawdown_pct, false));
-  set("line", `${run.trades.length} trades · ${winners} won, ${run.trades.length - winners} lost · ${pct(run.cagr_pct)} a year for H1`);
+  set("b-dd", pct(run.buy_hold_max_drawdown_pct, false));
+  set("vol", pct(h1.vol, false));
+  set("b-vol", pct(bh.vol, false));
+  set("sharpe", fixed(h1.sharpe));
+  set("b-sharpe", fixed(bh.sharpe));
+  set("sortino", fixed(h1.sortino));
+  set("b-sortino", fixed(bh.sortino));
+  set("calmar", fixed(run.net_return_pct / run.mtm_max_drawdown_pct));
+  set("b-calmar", fixed(run.buy_hold_net_return_pct / run.buy_hold_max_drawdown_pct));
+  set("beta", `${fixed(beta)}, ${fixed(corr)}`);
+
+  const r = run.trades.map((t) => t.return_pct);
+  const wins = r.filter((x) => x > 0);
+  const losses = r.filter((x) => x <= 0);
+  const sum = (xs) => xs.reduce((a, b) => a + b, 0);
+  const top = [...r].sort((a, b) => b - a).slice(0, 2);
+  const held = run.trades.map((t) => hours(t.open, t.close)).sort((a, b) => a - b);
+  const median = held.length % 2 ? held[(held.length - 1) / 2] : (held[held.length / 2 - 1] + held[held.length / 2]) / 2;
+  const t = mean(r) / (sd(r) / Math.sqrt(r.length));
+  set("n", `${r.length}, ${wins.length}`);
+  set("mean", `${pct(mean(r))} (${pct(sd(r), false)})`);
+  set("t", fixed(t));
+  set("pf", losses.length ? fixed(sum(wins) / -sum(losses)) : "n/a");
+  set("wl", `${pct(mean(wins))} / ${losses.length ? pct(mean(losses)) : "n/a"}`);
+  set("top2", minus(`${pct(sum(top)).replace(" %", " pp")} / ${pct(sum(r) - sum(top)).replace(" %", " pp")}`));
+  set("hold", `${Math.round(median / 24)} d`);
+  set("status", `t < 2: the mean trade is not distinguishable from zero at conventional levels (n = ${r.length}).`);
+  document.getElementById("stats-range").textContent = `${run.dates[0]} → ${run.dates.at(-1)}`;
   root.classList.remove("is-loading");
 }
 
 function renderTrades(run) {
-  document.getElementById("trades-title").textContent = `All ${run.trades.length} trades in this run`;
+  document.getElementById("trades-title").textContent = `Trades (${run.trades.length})`;
   const body = document.getElementById("trades-body");
   body.textContent = "";
   run.trades.forEach((t, i) => {
@@ -273,13 +307,7 @@ function renderTrades(run) {
   });
 }
 
-function swap(node) {
-  node.classList.remove("swap");
-  void node.offsetWidth;
-  node.classList.add("swap");
-}
-
-function render(animate = false) {
+function render() {
   if (!data) return;
   const run = data.runs[`${state.period}-${state.cost}`];
   syncControls();
@@ -287,10 +315,8 @@ function render(animate = false) {
   const first = run.dates[0];
   const last = run.dates[run.dates.length - 1];
   document.getElementById("equity-sub").textContent =
-    `${PERIODS[state.period]}, ${first} → ${last}. H1 pays ${COSTS[state.cost]}, buy and hold 0.5 %. ` +
-    `Marked to market at each day’s last 4h close.` + (heldout ? " The hatched space is the forward test, not yet run." : "");
-  document.querySelector(".legend-future").hidden = !heldout;
-  renderReadout(run);
+    `${PERIODS[state.period]}, ${first} → ${last}; H1 ${COSTS[state.cost]}, buy and hold 0.5 % per side; daily marks.`;
+  renderStats(run);
   renderTrades(run);
 
   const equity = document.getElementById("equity-chart");
@@ -300,8 +326,6 @@ function render(animate = false) {
       { key: "hold", name: "Buy and hold", values: run.buy_hold },
     ],
     spans: positionSpans(run),
-    future: heldout,
-    futureLabel: true,
     baseline: 1000,
     tickCount: 5,
     endLabels: true,
@@ -311,15 +335,14 @@ function render(animate = false) {
 
   const limit = heldout && state.cost === "base" ? -K2_FACTOR * run.buy_hold_max_drawdown_pct : undefined;
   document.getElementById("drawdown-sub").textContent =
-    "Daily sampling, so the curve can sit slightly above the 4h figures in the table." +
-    (limit === undefined ? "" : " The dashed line is the K2 limit that H1’s 4h drawdown had to stay within.");
+    "Daily marks, so troughs can be shallower than the 4h figures in the table." +
+    (limit === undefined ? "" : " Dashed: the K2 limit.");
   const drawdown = document.getElementById("drawdown-chart");
   drawChart(drawdown, run, {
     series: [
       { key: "strategy", name: "H1", values: drawdowns(run.strategy) },
       { key: "hold", name: "Buy and hold", values: drawdowns(run.buy_hold) },
     ],
-    future: heldout,
     baseline: 0,
     ceil: 0,
     floor: limit,
@@ -329,8 +352,6 @@ function render(animate = false) {
     format: (v, exact) => (Math.abs(v) < 0.05 ? "0 %" : minus(`${v.toFixed(exact ? 1 : 0)} %`)),
     aria: `Drawdown chart, ${PERIODS[state.period]} period. Use the arrow keys to read daily values.`,
   });
-
-  if (animate) [equity, drawdown, document.getElementById("readout")].forEach(swap);
 }
 
 function syncControls() {
@@ -365,8 +386,8 @@ function showError(message) {
     chart.appendChild(html("p", "chart-state error", message));
   }
   document.querySelector(".trades").hidden = true;
-  document.querySelector('#readout [data-field="line"]').textContent =
-    "No run loaded. The criteria in §2 come from the experiment record and are unaffected.";
+  document.querySelector('#stats [data-f="status"]').textContent =
+    "No run loaded. The decision table under Protocol comes from the experiment record and is unaffected.";
 }
 
 for (const group of document.querySelectorAll(".choice")) {
@@ -376,7 +397,7 @@ for (const group of document.querySelectorAll(".choice")) {
       if (state[group.dataset.key] === b.dataset.value) return;
       state[group.dataset.key] = b.dataset.value;
       writeUrl();
-      render(true);
+      render();
     });
     b.addEventListener("keydown", (e) => {
       const d = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
@@ -400,7 +421,7 @@ window.addEventListener("resize", () => {
 
 readUrl();
 syncControls();
-document.getElementById("readout").classList.add("is-loading");
+document.getElementById("stats").classList.add("is-loading");
 fetch("data/equity-curves.json")
   .then((r) => {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);

@@ -64,6 +64,7 @@ def build_run(record: dict, benchmark: dict, candles: pd.DataFrame, fee: float) 
         "cagr_pct": record["cagr_pct"],
         "mtm_max_drawdown_pct": record["mtm_max_drawdown_pct"],
         "buy_hold_net_return_pct": benchmark["buy_hold_net_return_pct"],
+        "buy_hold_cagr_pct": benchmark["buy_hold_cagr_pct"],
         "buy_hold_max_drawdown_pct": benchmark["buy_hold_max_drawdown_pct"],
         "trades": [
             {
