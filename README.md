@@ -3,7 +3,7 @@
 # Schrödingers Quant
 
 [![CI](https://github.com/sebastianspicker/schrodingers-quant/actions/workflows/ci.yml/badge.svg)](https://github.com/sebastianspicker/schrodingers-quant/actions/workflows/ci.yml)
-[![Demo](https://img.shields.io/badge/demo-GitHub%20Pages-1d3f8f)](https://sebastianspicker.github.io/schrodingers-quant/)
+[![Demo](https://img.shields.io/badge/demo-GitHub%20Pages-1f4e9c)](https://sebastianspicker.github.io/schrodingers-quant/)
 
 The bot is both trading and not trading until you look at the config. Out of
 the box, it is **not trading**.
@@ -35,24 +35,27 @@ the box, it is **not trading**.
 ## Screenshot tour
 
 The [interactive demo](https://sebastianspicker.github.io/schrodingers-quant/)
-replays the recorded backtests of H1. It runs in your browser from a static
+is the backtest record of H1 as one page: specification, summary, results by
+period, protocol, limitations and system. It runs in your browser from a static
 JSON file; there is no bot or exchange behind it.
 
-### 1. Compare H1 with buy-and-hold
+### 1. Results against buy-and-hold
 
 H1 buys BTC/EUR when a 4h close breaks the 20-day high and sells when it breaks
-the 10-day low. The demo values both H1 and buy-and-hold at every close
-(marked to market), fees included, on a fixed €1,000 stake. A strip under the
-chart shows when H1 holds a position, and the hatched space after the held-out
-run is the forward test that has not happened yet.
+the 10-day low. Both H1 and buy-and-hold are marked to market, fees included,
+on a fixed €1,000 stake. Next to the recorded return, CAGR and drawdown, the
+page computes volatility, Sharpe and Sortino ratios, beta, and trade statistics
+(mean trade, t-statistic, profit factor, concentration) from the recorded
+series. On held-out data the mean trade has t ≈ 0.73, and the two largest
+trades carry the result.
 [Open the held-out run](https://sebastianspicker.github.io/schrodingers-quant/?period=heldout&cost=base).
 
-![Held-out period: H1 ends at €1,398 against €1,186 for buy-and-hold, with a smaller drawdown](pages/assets/screenshots/heldout.png)
+![Held-out period: statistics tables and the equity chart; H1 ends at €1,398 against €1,186 for buy-and-hold](pages/assets/screenshots/heldout.png)
 
-### 2. See where it lags
+### 2. Where it lags
 
-In a strong bull market, buy-and-hold wins by a wide margin. H1 exists to cut
-drawdowns, not to beat the market in every period.
+In a strong bull market, buy-and-hold wins by a wide margin (+265 % against
++67 %, at a similar drawdown).
 [Open the validation run](https://sebastianspicker.github.io/schrodingers-quant/?period=validation&cost=base).
 
 ![Validation period: H1 returns 67 % while buy-and-hold returns 265 %](pages/assets/screenshots/validation.png)
@@ -63,25 +66,25 @@ Switch to 1.0 % per side to see how much fees and slippage matter. Hover over
 the chart, or use the arrow keys, to read the equity on any day.
 [Open the stress run](https://sebastianspicker.github.io/schrodingers-quant/?period=heldout&cost=stress).
 
-![Equity chart with a tooltip showing both curves on 15 Nov 2025](pages/assets/screenshots/tooltip.png)
+![Equity chart with a tooltip showing both curves on 5 Dec 2025](pages/assets/screenshots/tooltip.png)
 
-### 4. Check the decision rule
+### 4. Protocol
 
-The four pass criteria were written down before the held-out data was run. The
-demo shows each result next to the reasons the evidence is still weak.
+The decision rule with thresholds and margins, the disclosed deviation (the
+held-out window was run twice), and the bias and proxy checks.
 
-![Four passed criteria and a list of caveats](pages/assets/screenshots/decision.png)
+![Decision table, protocol deviation and checks](pages/assets/screenshots/decision.png)
 
-### 5. See how the bot is wired
+### 5. System
 
 Freqtrade is the only component that places orders. Everything else only
 checks, records or watches.
 
 ![Diagram: Kraken, the Freqtrade container, the trade database, read-only checks, the optional model worker and host timers](pages/assets/screenshots/system.png)
 
-The demo also works on a phone and follows your system's dark mode.
+The page also works on a phone and follows your system's dark mode.
 
-<img src="pages/assets/screenshots/mobile-dark.png" alt="The demo on a phone in dark mode, showing the held-out period" width="300">
+<img src="pages/assets/screenshots/mobile-dark.png" alt="The demo on a phone in dark mode, showing the held-out statistics" width="300">
 
 ## What's in it
 

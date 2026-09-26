@@ -3,281 +3,307 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Schrödingers Quant · H1 experiment record</title>
-  <meta name="description" content="Recorded backtests of H1, a 20/10-day channel breakout on BTC/EUR 4h, marked to market against buy-and-hold, with the decision rule written before the test. Part of Schrödingers Quant, a Freqtrade spot bot that ships in dry-run.">
+  <title>H1 backtest record · Schrödingers Quant</title>
+  <meta name="description" content="Backtest record for H1, a long-only 20/10-day channel breakout on BTC/EUR 4h: predeclared protocol, marked-to-market equity against buy-and-hold, trade-level statistics and known limitations. No live or paper-trading results yet.">
   <meta name="color-scheme" content="light dark">
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
-  <link rel="preload" href="assets/fonts/sq-serif.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="assets/fonts/commit-mono-400.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="assets/style.css">
   <script>document.documentElement.classList.add("js");</script>
 </head>
 <body>
-  <a class="skip" href="#results">Skip to the results</a>
+  <a class="skip" href="#results">Skip to results</a>
 
-  <header class="masthead">
-    <div class="wrap masthead-row">
-      <a class="brand" href="./">
-        <img src="assets/favicon.svg" alt="" width="24" height="24">
-        <span>Schrödingers Quant</span>
-      </a>
+  <header class="top">
+    <div class="wrap top-row">
+      <a class="brand" href="./">Schrödingers Quant</a>
       <nav aria-label="Sections">
-        <a href="#results"><span class="sec">§1</span> Results</a>
-        <a href="#decision"><span class="sec">§2</span> Decision</a>
-        <a href="#system"><span class="sec">§3</span> System</a>
+        <a href="#results">Results</a>
+        <a href="#protocol">Protocol</a>
+        <a href="#limitations">Limitations</a>
+        <a href="#system">System</a>
         <a href="https://github.com/sebastianspicker/schrodingers-quant">Source</a>
       </nav>
     </div>
-    <p class="wrap state">
-      <span class="visually-hidden">Tracked configuration:</span>
-      <span>dry_run <b>true</b></span>
-      <span>initial_state <b>stopped</b></span>
-      <span>exchange keys <b>none</b></span>
-    </p>
   </header>
 
-  <main>
-    <section class="wrap record intro" aria-labelledby="page-title">
-      <aside class="margin">
-        <p><span class="k">Experiment</span> H1</p>
-        <p><span class="k">Rules fixed</span> <time datetime="2026-09-24">2026-09-24</time></p>
-        <p><span class="k">Market</span> BTC/EUR · 4h</p>
-      </aside>
-      <div class="body">
-        <h1 id="page-title">A breakout strategy, with the drawdown left&nbsp;in.</h1>
-        <p class="lede">
-          Schrödingers Quant is a <a href="https://www.freqtrade.io/">Freqtrade</a> spot bot for Kraken
-          that ships in dry-run and starts stopped. Its strategy, H1, buys BTC/EUR when a 4h close breaks
-          the 20-day high and sells when it breaks the 10-day low. This is the record of the backtests
-          that decided whether it may move on to paper trading.
-        </p>
+  <main class="wrap">
+    <section class="head" aria-labelledby="page-title">
+      <p class="kicker">Backtest record · experiment H1 · predeclared <time datetime="2026-09-24">2026-09-24</time></p>
+      <h1 id="page-title">H1: 20/10-day channel breakout, BTC/EUR 4h, long only</h1>
+      <p class="lede">
+        A Turtle-style channel breakout run in <a href="https://www.freqtrade.io/">Freqtrade</a>, tested
+        on train, validation and one held-out period against buy-and-hold. All results are historical
+        simulations. No paper-trading or live results exist yet.
+      </p>
 
-        <div class="verdict">
-          <p class="verdict-head"><span class="k">Verdict</span> <strong>GO, marginal</strong></p>
-          <p>
-            H1 passed all four criteria written before the held-out run. The tightest, K2, it passed by
-            0.9 percentage points: its worst drawdown had to stay within <span class="nw">0.6 × buy-and-hold’s</span>.
-          </p>
-          <figure class="gauge" aria-labelledby="gauge-cap">
-            <div class="gauge-scale" role="img" aria-label="Held-out drawdown, 0 to 52.2 percent: H1 30.4 percent, K2 limit 31.3 percent, buy and hold 52.2 percent.">
-              <span class="g-label g-limit" style="--at: 60%">limit 31.3 %</span>
-              <span class="g-bar g-hold"></span>
-              <span class="g-bar g-h1" style="--at: 58.2%"></span>
-              <span class="g-tick g-tick-limit" style="--at: 60%"></span>
-              <span class="g-label g-h1-label">H1 30.4 %</span>
-              <span class="g-label g-hold-label">buy and hold 52.2 %</span>
-            </div>
-            <figcaption id="gauge-cap">Held-out max drawdown, marked to market, <span class="nw">2024-07-01 → 2026-09-20</span>.</figcaption>
-          </figure>
-          <p class="verdict-foot">
-            GO permits forward paper trading and a €10 execution test. It does not justify more capital.
-          </p>
-        </div>
+      <dl class="spec">
+        <div><dt>Entry</dt><dd>4h close &gt; highest high of prior 120 bars (20 d)</dd></div>
+        <div><dt>Exit</dt><dd>4h close &lt; lowest low of prior 60 bars (10 d); −20 % stop</dd></div>
+        <div><dt>Fills</dt><dd>next bar open, closed bars only</dd></div>
+        <div><dt>Sizing</dt><dd>one position, fixed €1,000 notional, no leverage</dd></div>
+        <div><dt>Costs</dt><dd>0.5 % per side (0.40 % taker + 0.10 % slippage); stress 1.0 %</dd></div>
+        <div><dt>Data</dt><dd>Binance BTC/EUR OHLCV as a Kraken proxy</dd></div>
+        <div><dt>Periods</dt><dd>train 2020–22 · validation 2023-01 → 2024-06 · held-out 2024-07 → 2026-09-20</dd></div>
+        <div><dt>Parameters</dt><dd>20/10 from the literature, not fitted</dd></div>
+      </dl>
 
-        <p class="scope">
-          Everything below is a historical simulation on Binance prices used as a proxy for Kraken. None of it
-          is a live result or a forecast.
-        </p>
-      </div>
+      <h2 class="h-summary">Summary</h2>
+      <ul class="summary">
+        <li>
+          <b>Held-out, base costs:</b> net <span class="n" data-check="heldout-base:net_return_pct">+39.8 %</span> vs <span class="n" data-check="heldout-base:buy_hold_net_return_pct">+17.6 %</span> for buy-and-hold;
+          max drawdown <span class="n" data-check="heldout-base:mtm_max_drawdown_pct">30.4 %</span> vs <span class="n" data-check="heldout-base:buy_hold_max_drawdown_pct">52.2 %</span>; in the market
+          <span class="n">38.5 %</span> of the time, so part of the smaller drawdown is simply lower exposure.
+        </li>
+        <li>
+          <b>The sample is small.</b> <span data-check="heldout-base:trades">14</span> trades, <span data-check="heldout-base:winners">5</span> winners; mean trade <span class="n" data-check="heldout-base:trade_mean">+2.8 %</span>
+          (s.d. <span class="n" data-check="heldout-base:trade_sd">14.5 %</span>), <span class="n">t ≈ <span data-check="heldout-base:trade_t">0.73</span></span>. The mean is not distinguishable from zero.
+        </li>
+        <li>
+          <b>Returns are concentrated.</b> The two largest trades add <span class="n" data-check="heldout-base:top2">+65.5 pp</span>; the other
+          twelve sum to <span class="n" data-check="heldout-base:rest">−25.8 pp</span>.
+        </li>
+        <li>
+          <b>It lags in strong trends.</b> Validation: <span class="n" data-check="validation-base:net_return_pct">+67.2 %</span> vs <span class="n" data-check="validation-base:buy_hold_net_return_pct">+265.2 %</span>
+          for buy-and-hold, at a similar drawdown (<span class="n" data-check="validation-base:mtm_max_drawdown_pct">20.6 %</span> vs <span class="n" data-check="validation-base:buy_hold_max_drawdown_pct">20.5 %</span>).
+        </li>
+        <li>
+          <b>Gate:</b> the four predeclared criteria pass, the drawdown criterion by <span class="n" data-check="heldout-base:k2_margin">0.94 pp</span>, on
+          the second held-out run (the first run broke the sizing rule and failed). The pass only permits forward
+          paper trading and a €10 execution test.
+        </li>
+      </ul>
+      <p class="note">
+        Mean, s.d. and t are computed from the per-trade returns in the recorded trade list. The concentration figures add
+        those returns; on the fixed stake they sum to <span data-check="heldout-base:trade_sum">+39.6 pp</span>, against the recorded net return of <span data-check="heldout-base:net_return_pct">+39.8 %</span>.
+      </p>
     </section>
 
-    <section class="wrap record" id="results" aria-labelledby="results-title">
-      <aside class="margin">
-        <p class="sec-no">§1</p>
-        <p><span class="k">Stake</span> €1,000, fixed</p>
-        <p><span class="k">Marked</span> every 4h close</p>
-        <p><span class="k">Benchmark</span> buy and hold, 0.5 % per side</p>
-      </aside>
-      <div class="body">
-        <h2 id="results-title">What H1 did, next to simply holding</h2>
-        <p class="no-js">
-          The charts and the run selector need JavaScript. The held-out figures are in §2, and every run is in
-          the <a href="https://github.com/sebastianspicker/schrodingers-quant/blob/main/research/experiments/H1/record.md">experiment record</a>.
-        </p>
-        <div class="needs-js">
-
+    <section id="results" aria-labelledby="results-title">
+      <h2 id="results-title">Results by period</h2>
+      <p class="no-js">
+        The charts and statistics need JavaScript. Every run is tabulated in the
+        <a href="https://github.com/sebastianspicker/schrodingers-quant/blob/main/research/experiments/H1/record.md">experiment record</a>.
+      </p>
+      <div class="needs-js">
         <div class="controls" role="group" aria-label="Choose a run">
           <fieldset class="choice" data-key="period">
             <legend>Period</legend>
             <div role="radiogroup" aria-label="Period">
               <button type="button" role="radio" data-value="train">Train <span>2020–22</span></button>
               <button type="button" role="radio" data-value="validation">Validation <span>2023–24</span></button>
-              <button type="button" role="radio" data-value="heldout">Held-out <span>2024–26, run once</span></button>
+              <button type="button" role="radio" data-value="heldout">Held-out <span>2024–26</span></button>
             </div>
           </fieldset>
           <fieldset class="choice" data-key="cost">
-            <legend>Costs for H1</legend>
-            <div role="radiogroup" aria-label="Costs for H1">
-              <button type="button" role="radio" data-value="base">0.5 % <span>per side</span></button>
-              <button type="button" role="radio" data-value="stress">1.0 % <span>stress</span></button>
+            <legend>H1 costs per side</legend>
+            <div role="radiogroup" aria-label="H1 costs per side">
+              <button type="button" role="radio" data-value="base">0.5 %</button>
+              <button type="button" role="radio" data-value="stress">1.0 %</button>
             </div>
           </fieldset>
         </div>
 
-        <div class="readout" id="readout" aria-live="polite">
-          <table>
-            <caption class="visually-hidden">Summary of the selected run</caption>
-            <thead>
-              <tr><td></td><th scope="col" class="h1">H1</th><th scope="col" class="hold">Buy and hold</th></tr>
-            </thead>
+        <div class="stats" id="stats" aria-live="polite">
+          <table class="stat-table">
+            <caption>Return and risk <span id="stats-range"></span></caption>
+            <thead><tr><th scope="col"></th><th scope="col" class="num h1">H1</th><th scope="col" class="num hold">Buy &amp; hold</th></tr></thead>
             <tbody>
-              <tr><th scope="row">Net return</th><td class="h1" data-field="ret">—</td><td class="hold" data-field="hold-ret">—</td></tr>
-              <tr><th scope="row">Max drawdown</th><td class="h1" data-field="dd">—</td><td class="hold" data-field="hold-dd">—</td></tr>
+              <tr><th scope="row">Net return</th><td class="num" data-f="ret">—</td><td class="num" data-f="b-ret">—</td></tr>
+              <tr><th scope="row">CAGR</th><td class="num" data-f="cagr">—</td><td class="num" data-f="b-cagr">—</td></tr>
+              <tr><th scope="row">Max drawdown, 4h marked to market</th><td class="num" data-f="dd">—</td><td class="num" data-f="b-dd">—</td></tr>
+              <tr><th scope="row">Annualised volatility</th><td class="num" data-f="vol">—</td><td class="num" data-f="b-vol">—</td></tr>
+              <tr><th scope="row">Sharpe ratio, r<sub>f</sub> = 0</th><td class="num" data-f="sharpe">—</td><td class="num" data-f="b-sharpe">—</td></tr>
+              <tr><th scope="row">Sortino ratio</th><td class="num" data-f="sortino">—</td><td class="num" data-f="b-sortino">—</td></tr>
+              <tr><th scope="row">Return / max drawdown</th><td class="num" data-f="calmar">—</td><td class="num" data-f="b-calmar">—</td></tr>
+              <tr><th scope="row">β to buy-and-hold, correlation</th><td class="num" data-f="beta">—</td><td class="num">1.00, 1.00</td></tr>
             </tbody>
           </table>
-          <p class="readout-line" data-field="line">Loading the recorded runs…</p>
+          <table class="stat-table">
+            <caption>H1 trades</caption>
+            <thead><tr><th scope="col"></th><th scope="col" class="num h1">H1</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">Trades, winners</th><td class="num" data-f="n">—</td></tr>
+              <tr><th scope="row">Mean trade (s.d.)</th><td class="num" data-f="mean">—</td></tr>
+              <tr><th scope="row">t-statistic of mean</th><td class="num" data-f="t">—</td></tr>
+              <tr><th scope="row">Profit factor</th><td class="num" data-f="pf">—</td></tr>
+              <tr><th scope="row">Mean win / mean loss</th><td class="num" data-f="wl">—</td></tr>
+              <tr><th scope="row">Two largest trades / rest</th><td class="num" data-f="top2">—</td></tr>
+              <tr><th scope="row">Median holding time</th><td class="num" data-f="hold">—</td></tr>
+            </tbody>
+          </table>
+          <p class="note stats-note" data-f="status">Loading the recorded runs…</p>
+          <p class="note">
+            Net return, CAGR and max drawdown are recorded values. The other rows are computed in the browser from the
+            daily series (last 4h close per UTC day, 365-day annualisation) and the trade list. They are descriptive
+            and were not part of the decision rule.
+          </p>
         </div>
 
         <figure class="plot">
           <figcaption>
-            <h3>Equity on a fixed €1,000 stake</h3>
-            <p id="equity-sub">Marked to market at each day’s last 4h close, fees included.</p>
+            <span class="plot-title">Equity, €1,000 fixed stake</span>
+            <span class="plot-sub" id="equity-sub"></span>
           </figcaption>
           <ul class="legend" aria-label="Legend">
-            <li><svg class="key" width="22" height="8" aria-hidden="true"><line x1="0" y1="4" x2="22" y2="4" class="k-h1"/></svg>H1 channel breakout</li>
-            <li><svg class="key" width="22" height="8" aria-hidden="true"><line x1="0" y1="4" x2="22" y2="4" class="k-hold"/></svg>Buy and hold BTC/EUR</li>
-            <li><svg class="key" width="22" height="8" aria-hidden="true"><rect x="0" y="1" width="22" height="6" class="k-exposure"/></svg>H1 in a position</li>
-            <li class="legend-future" hidden><svg class="key" width="22" height="8" aria-hidden="true"><rect x="0" y="0" width="22" height="8" class="k-future"/></svg>Not yet observed</li>
+            <li><svg class="key" width="20" height="8" aria-hidden="true"><line x1="0" y1="4" x2="20" y2="4" class="k-h1"/></svg>H1</li>
+            <li><svg class="key" width="20" height="8" aria-hidden="true"><line x1="0" y1="4" x2="20" y2="4" class="k-hold"/></svg>Buy &amp; hold</li>
+            <li><svg class="key" width="20" height="8" aria-hidden="true"><rect x="0" y="2" width="20" height="4" class="k-exposure"/></svg>H1 in position</li>
           </ul>
-          <div class="chart" id="equity-chart"><p class="chart-state">Loading recorded curves…</p></div>
+          <div class="chart" id="equity-chart"><p class="chart-state">Loading…</p></div>
         </figure>
 
         <figure class="plot">
           <figcaption>
-            <h3>Drawdown from the running peak</h3>
-            <p id="drawdown-sub">Daily sampling, so the curve can sit slightly above the 4h figures in the table.</p>
+            <span class="plot-title">Drawdown from running peak</span>
+            <span class="plot-sub" id="drawdown-sub"></span>
           </figcaption>
-          <div class="chart chart-short" id="drawdown-chart"><p class="chart-state">Loading recorded curves…</p></div>
+          <div class="chart chart-short" id="drawdown-chart"><p class="chart-state">Loading…</p></div>
         </figure>
 
         <div class="trades">
           <h3 id="trades-title">Trades</h3>
           <div class="table-scroll" tabindex="0" role="region" aria-labelledby="trades-title">
-            <table>
+            <table class="data">
               <thead>
                 <tr>
                   <th scope="col" class="num">#</th>
-                  <th scope="col">Entry, UTC</th>
-                  <th scope="col">Exit, UTC</th>
+                  <th scope="col">Entry (UTC)</th>
+                  <th scope="col">Exit (UTC)</th>
                   <th scope="col" class="num">Held</th>
                   <th scope="col" class="num">Return</th>
                   <th scope="col" class="bar-col"><span class="visually-hidden">Return, drawn to scale</span></th>
-                  <th scope="col">Exit</th>
+                  <th scope="col">Exit reason</th>
                 </tr>
               </thead>
               <tbody id="trades-body"></tbody>
             </table>
           </div>
         </div>
-        </div>
       </div>
     </section>
 
-    <section class="wrap record" id="decision" aria-labelledby="decision-title">
-      <aside class="margin">
-        <p class="sec-no">§2</p>
-        <p><span class="k">Declared</span> <a href="https://github.com/sebastianspicker/schrodingers-quant/blob/main/research/hypotheses/H1.md">research/hypotheses/H1.md</a></p>
-        <p><span class="k">Strategy SHA-256</span> <code class="hash">142f95a4…70d7fc8e</code></p>
-      </aside>
-      <div class="body">
-        <h2 id="decision-title">The rule, written before the test</h2>
-        <p class="section-lede">
-          H1 was predeclared with fixed rules, fixed periods and four criteria. All four must pass for GO.
-          The held-out window was meant to be run once.
-        </p>
+    <section id="protocol" aria-labelledby="protocol-title">
+      <h2 id="protocol-title">Protocol</h2>
+      <p>
+        Rules, periods, costs and pass criteria were fixed in
+        <a href="https://github.com/sebastianspicker/schrodingers-quant/blob/main/research/hypotheses/H1.md">research/hypotheses/H1.md</a>
+        before the evaluation data was inspected. The strategy file was frozen before the held-out run
+        (SHA-256 <code>142f95a4…70d7fc8e</code>). Train was used as a sanity check only; no parameter was selected on any period.
+      </p>
 
-        <table class="criteria">
-          <caption class="visually-hidden">Decision criteria and results</caption>
+      <h3>Decision rule: all four must pass</h3>
+      <div class="table-scroll">
+        <table class="data criteria">
           <thead>
-            <tr><th scope="col">ID</th><th scope="col">Criterion</th><th scope="col" class="num">Result</th><th scope="col">Outcome</th></tr>
+            <tr><th scope="col">ID</th><th scope="col">Criterion</th><th scope="col" class="num">Threshold</th><th scope="col" class="num">Result</th><th scope="col" class="num">Margin</th><th scope="col">Outcome</th></tr>
           </thead>
           <tbody>
-            <tr><th scope="row">K1</th><td>Held-out net return &gt; 0, base costs</td><td class="num">+39.8 %</td><td class="pass">pass</td></tr>
-            <tr><th scope="row">K2</th><td>Held-out max drawdown ≤ 0.6 × buy-and-hold’s <span class="aside">limit 31.3 %, margin 0.9 points</span></td><td class="num">30.4 %</td><td class="pass">pass</td></tr>
-            <tr><th scope="row">K3</th><td>Held-out net return &gt; 0 at 1.0 % per side</td><td class="num">+25.5 %</td><td class="pass">pass</td></tr>
-            <tr><th scope="row">K4</th><td>Validation net return &gt; 0, base costs</td><td class="num">+67.2 %</td><td class="pass">pass</td></tr>
+            <tr><th scope="row">K1</th><td>Held-out net return, 0.5 %/side</td><td class="num">&gt; 0</td><td class="num" data-check="heldout-base:net_return_pct">+39.81 %</td><td class="num" data-check="heldout-base:net_return_pct">39.81 pp</td><td>pass</td></tr>
+            <tr><th scope="row">K2</th><td>Held-out max DD ≤ 0.6 × buy-and-hold max DD (<span data-check="heldout-base:buy_hold_max_drawdown_pct">52.18 %</span>)</td><td class="num" data-check="heldout-base:k2_limit">≤ 31.31 %</td><td class="num" data-check="heldout-base:mtm_max_drawdown_pct">30.37 %</td><td class="num tight" data-check="heldout-base:k2_margin">0.94 pp</td><td>pass</td></tr>
+            <tr><th scope="row">K3</th><td>Held-out net return, 1.0 %/side</td><td class="num">&gt; 0</td><td class="num" data-check="heldout-stress:net_return_pct">+25.55 %</td><td class="num" data-check="heldout-stress:net_return_pct">25.55 pp</td><td>pass</td></tr>
+            <tr><th scope="row">K4</th><td>Validation net return, 0.5 %/side</td><td class="num">&gt; 0</td><td class="num" data-check="validation-base:net_return_pct">+67.20 %</td><td class="num" data-check="validation-base:net_return_pct">67.20 pp</td><td>pass</td></tr>
           </tbody>
         </table>
+      </div>
+      <p class="note">
+        K1, K3 and K4 only require a positive return; they do not test against the benchmark or against zero with
+        any significance level. K2 is the binding criterion.
+      </p>
 
-        <h3 class="caveat-title">Why it is still weak evidence</h3>
-        <ol class="caveats">
-          <li>
-            <strong>The held-out window was run twice.</strong> The first run compounded the stake, against the
-            declared fixed stake, and failed K2 (+32.3 %, 35.1 % drawdown). The fixed-stake rerun is the one that
-            counts. Both are published.
-          </li>
-          <li>
-            <strong>Fourteen held-out trades, five winners.</strong> A few long trends carry the result.
-          </li>
-          <li>
-            <strong>The family was chosen with hindsight.</strong> H1’s author, an AI model, knew how crypto prices
-            moved up to mid-2026 when it picked a trend follower. Only the 20/10 channel lengths come from the literature.
-          </li>
-        </ol>
-        <p class="next">
-          So the next evidence has to come from data after 2026-09-24: forward paper trading on a VPS.
-          <a href="https://github.com/sebastianspicker/schrodingers-quant/blob/main/research/experiments/H1/record.md">Read the full experiment record</a>.
-        </p>
+      <h3>Deviation from protocol</h3>
+      <p>
+        The first held-out run used a compounding stake (<code>stake_amount: "unlimited"</code>) instead of the declared
+        fixed stake. It returned +32.25 % with a 35.11 % drawdown and failed K2. After review flagged the mismatch,
+        every period was re-run with the fixed stake and no other change. The held-out window has therefore been
+        evaluated twice, and the second run is the one that passes. Both are
+        <a href="https://github.com/sebastianspicker/schrodingers-quant/tree/main/research/experiments/H1/superseded-compounding">published</a>.
+      </p>
+
+      <h3>Checks</h3>
+      <div class="table-scroll">
+        <table class="data">
+          <thead><tr><th scope="col">Check</th><th scope="col">Scope</th><th scope="col">Result</th></tr></thead>
+          <tbody>
+            <tr><td>Freqtrade <code>lookahead-analysis</code></td><td>train + validation</td><td>no bias, 20/20 signals</td></tr>
+            <tr><td>Freqtrade <code>recursive-analysis</code></td><td>startup 121 … 1999 bars</td><td>no indicator variance</td></tr>
+            <tr><td>Binance vs Kraken, BTC/EUR 4h</td><td>last 719 Kraken bars</td><td>return corr. 0.985, median |Δclose| 1.06 bp</td></tr>
+            <tr><td>Sensitivity, 10/5 and 55/20 channels</td><td>train + validation</td><td>reported, not used to select</td></tr>
+          </tbody>
+        </table>
       </div>
     </section>
 
-    <section class="wrap record" id="system" aria-labelledby="system-title">
-      <aside class="margin">
-        <p class="sec-no">§3</p>
-        <p><span class="k">Host</span> Debian 13, 2 vCPU, 3 GB</p>
-        <p><span class="k">Runtime</span> Freqtrade 2026.8, pinned by digest</p>
-      </aside>
-      <div class="body">
-        <h2 id="system-title">How the bot is put together</h2>
-        <p class="section-lede">Freqtrade is the only thing that places orders. Everything else checks, records or watches.</p>
-        <svg viewBox="0 0 760 300" role="img" aria-labelledby="sys-title sys-desc" class="diagram diagram-wide">
-          <title id="sys-title">System overview</title>
-          <desc id="sys-desc">Kraken exchanges orders and market data with the Freqtrade container. Freqtrade writes the trade database. Host timers back up the database and ping a dead-man's switch. Read-only preflight and reconciliation tools query Kraken. An optional model worker reads candidates and writes assessments without exchange credentials.</desc>
-          <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1.5 9 5 0 8.5" class="arrowhead"/></marker></defs>
-          <g class="node ext"><rect x="10" y="40" width="150" height="64"/><text x="85" y="68">Kraken</text><text x="85" y="88" class="small">spot, EUR pairs</text></g>
-          <g class="node core"><rect x="260" y="24" width="240" height="96"/><rect x="264" y="28" width="232" height="88" class="inner"/><text x="380" y="58">Freqtrade container</text><text x="380" y="80" class="small">H1ChannelBreakout · protections</text><text x="380" y="98" class="small">API on 127.0.0.1 · Telegram</text></g>
-          <g class="node"><rect x="600" y="40" width="150" height="64"/><text x="675" y="68">Trade DB</text><text x="675" y="88" class="small">SQLite</text></g>
-          <g class="node"><rect x="10" y="200" width="200" height="72"/><text x="110" y="230">Read-only checks</text><text x="110" y="250" class="small">preflight · reconcile</text></g>
-          <g class="node"><rect x="280" y="200" width="200" height="72"/><text x="380" y="230">Jev worker (optional)</text><text x="380" y="250" class="small">no exchange credentials</text></g>
-          <g class="node"><rect x="550" y="200" width="200" height="72"/><text x="650" y="230">Host timers</text><text x="650" y="250" class="small">health ping · backups</text></g>
-          <path d="M160 64H258" class="edge orders" marker-end="url(#arrow)" marker-start="url(#arrow)"/><text x="209" y="56" class="edge-label">orders · data</text>
-          <path d="M500 72H598" class="edge" marker-end="url(#arrow)"/><text x="549" y="64" class="edge-label">writes</text>
-          <path d="M85 200V106" class="edge dashed" marker-end="url(#arrow)"/><text x="97" y="160" class="edge-label start">read only</text>
-          <path d="M380 200V122" class="edge dashed" marker-start="url(#arrow)" marker-end="url(#arrow)"/><text x="392" y="160" class="edge-label start">candidates, verdicts</text>
-          <path d="M675 200V106" class="edge" marker-end="url(#arrow)"/><text x="687" y="160" class="edge-label start">backs up</text>
-        </svg>
-        <svg viewBox="0 0 360 572" role="img" aria-labelledby="sys-title-tall sys-desc" class="diagram diagram-tall">
-          <title id="sys-title-tall">System overview</title>
-          <defs><marker id="arrow-tall" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1.5 9 5 0 8.5" class="arrowhead"/></marker></defs>
-          <g class="node ext"><rect x="40" y="10" width="280" height="56"/><text x="180" y="34">Kraken</text><text x="180" y="53" class="small">spot, EUR pairs</text></g>
-          <g class="node core"><rect x="40" y="110" width="280" height="88"/><rect x="44" y="114" width="272" height="80" class="inner"/><text x="180" y="142">Freqtrade container</text><text x="180" y="163" class="small">H1ChannelBreakout · protections</text><text x="180" y="181" class="small">API on 127.0.0.1 · Telegram</text></g>
-          <g class="node"><rect x="40" y="242" width="280" height="56"/><text x="180" y="266">Trade DB</text><text x="180" y="285" class="small">SQLite</text></g>
-          <g class="node"><rect x="40" y="342" width="280" height="56"/><text x="180" y="366">Host timers</text><text x="180" y="385" class="small">health ping · backups</text></g>
-          <g class="node"><rect x="40" y="422" width="280" height="56"/><text x="180" y="446">Jev worker (optional)</text><text x="180" y="465" class="small">no exchange credentials</text></g>
-          <g class="node"><rect x="40" y="502" width="280" height="56"/><text x="180" y="526">Read-only checks</text><text x="180" y="545" class="small">preflight · reconcile</text></g>
-          <path d="M180 68V108" class="edge orders" marker-start="url(#arrow-tall)" marker-end="url(#arrow-tall)"/><text x="190" y="92" class="edge-label start">orders · data</text>
-          <path d="M180 198V240" class="edge" marker-end="url(#arrow-tall)"/><text x="190" y="223" class="edge-label start">writes</text>
-          <path d="M180 342V300" class="edge" marker-end="url(#arrow-tall)"/><text x="190" y="325" class="edge-label start">backs up</text>
-          <path d="M320 450H344V154H322" class="edge dashed" marker-start="url(#arrow-tall)" marker-end="url(#arrow-tall)"/><text x="352" y="300" class="edge-label" transform="rotate(90 352 300)">candidates, verdicts</text>
-          <path d="M40 530H16V38H38" class="edge dashed" marker-end="url(#arrow-tall)"/><text x="10" y="300" class="edge-label" transform="rotate(-90 10 300)">read only</text>
-        </svg>
-        <dl class="facts">
-          <div><dt>Ships inert</dt><dd>Tracked config is spot, dry-run, no credentials, and the bot starts <code>stopped</code>, including after every restart and restore.</dd></div>
-          <div><dt>One order engine</dt><dd>Project code never calls an order-creating method; a test fails if it does.</dd></div>
-          <div><dt>Exits never wait on a model</dt><dd>The optional Jev filter can only block new entries, and it fails closed.</dd></div>
-          <div><dt>Built for a small box</dt><dd>systemd timers, restic backups, and a dead-man’s switch that alerts on silence.</dd></div>
-        </dl>
-      </div>
+    <section id="limitations" aria-labelledby="limitations-title">
+      <h2 id="limitations-title">Limitations</h2>
+      <ol class="limits">
+        <li><b>Low power.</b> 14 held-out trades cannot separate a small edge from noise; the mean-trade t-statistic is about <span data-check="heldout-base:trade_t">0.7</span>.</li>
+        <li><b>Reused held-out data.</b> The held-out window was evaluated twice (see above). It is spent; new evidence must come from data after 2026-09-24.</li>
+        <li><b>Selection with hindsight.</b> The hypothesis was written by an AI model whose training covers crypto prices up to mid-2026. Choosing a trend follower for this market may itself be informed by the test period. Only the 20/10 channel lengths come from the literature.</li>
+        <li><b>One asset, one path.</b> A single pair and a single price history. ETH/EUR was run as a robustness check on train + validation only.</li>
+        <li><b>Execution is modelled, not observed.</b> Fills at next bar open with a flat cost per side; no order-book depth, partial fills or outages. The proxy check covers prices, not fills.</li>
+        <li><b>Benchmark choice.</b> Buy-and-hold at 100 % exposure is a weak comparison for a strategy that is in cash about 60 % of the time. An exposure-matched or volatility-matched benchmark was not predeclared.</li>
+      </ol>
+      <p>
+        Next: forward paper trading on the target VPS, then a €10 live execution test to measure real fills and fees.
+        Neither has started. Full details are in the
+        <a href="https://github.com/sebastianspicker/schrodingers-quant/blob/main/research/experiments/H1/record.md">experiment record</a> and
+        <a href="https://github.com/sebastianspicker/schrodingers-quant/blob/main/docs/adr/0005-h1-go-after-sizing-correction.md">ADR-0005</a>.
+      </p>
+    </section>
+
+    <section id="system" aria-labelledby="system-title">
+      <h2 id="system-title">System</h2>
+      <p>
+        Freqtrade 2026.8, pinned by image digest, is the only component that places orders. The tracked
+        configuration is spot, dry-run, without exchange credentials, and starts in <code>stopped</code>.
+        Target host: Debian 13, 2 vCPU, 3 GB RAM.
+      </p>
+      <svg viewBox="0 0 760 300" role="img" aria-labelledby="sys-title sys-desc" class="diagram diagram-wide">
+        <title id="sys-title">System overview</title>
+        <desc id="sys-desc">Kraken exchanges orders and market data with the Freqtrade container. Freqtrade writes the trade database. Host timers back up the database and ping a dead-man's switch. Read-only preflight and reconciliation tools query Kraken. An optional model worker reads candidates and writes assessments without exchange credentials.</desc>
+        <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1.5 9 5 0 8.5" class="arrowhead"/></marker></defs>
+        <g class="node ext"><rect x="10" y="40" width="150" height="64"/><text x="85" y="68">Kraken</text><text x="85" y="88" class="small">spot, EUR pairs</text></g>
+        <g class="node core"><rect x="260" y="24" width="240" height="96"/><text x="380" y="58">Freqtrade container</text><text x="380" y="80" class="small">H1ChannelBreakout · protections</text><text x="380" y="98" class="small">API on 127.0.0.1 · Telegram</text></g>
+        <g class="node"><rect x="600" y="40" width="150" height="64"/><text x="675" y="68">Trade DB</text><text x="675" y="88" class="small">SQLite</text></g>
+        <g class="node"><rect x="10" y="200" width="200" height="72"/><text x="110" y="230">Read-only checks</text><text x="110" y="250" class="small">preflight · reconcile</text></g>
+        <g class="node"><rect x="280" y="200" width="200" height="72"/><text x="380" y="230">Jev worker (optional)</text><text x="380" y="250" class="small">no exchange credentials</text></g>
+        <g class="node"><rect x="550" y="200" width="200" height="72"/><text x="650" y="230">Host timers</text><text x="650" y="250" class="small">health ping · backups</text></g>
+        <path d="M160 64H258" class="edge orders" marker-end="url(#arrow)" marker-start="url(#arrow)"/><text x="209" y="56" class="edge-label">orders · data</text>
+        <path d="M500 72H598" class="edge" marker-end="url(#arrow)"/><text x="549" y="64" class="edge-label">writes</text>
+        <path d="M85 200V106" class="edge dashed" marker-end="url(#arrow)"/><text x="97" y="160" class="edge-label start">read only</text>
+        <path d="M380 200V122" class="edge dashed" marker-start="url(#arrow)" marker-end="url(#arrow)"/><text x="392" y="160" class="edge-label start">candidates, verdicts</text>
+        <path d="M675 200V106" class="edge" marker-end="url(#arrow)"/><text x="687" y="160" class="edge-label start">backs up</text>
+      </svg>
+      <svg viewBox="0 0 360 572" role="img" aria-labelledby="sys-title-tall sys-desc" class="diagram diagram-tall">
+        <title id="sys-title-tall">System overview</title>
+        <defs><marker id="arrow-tall" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1.5 9 5 0 8.5" class="arrowhead"/></marker></defs>
+        <g class="node ext"><rect x="40" y="10" width="280" height="56"/><text x="180" y="34">Kraken</text><text x="180" y="53" class="small">spot, EUR pairs</text></g>
+        <g class="node core"><rect x="40" y="110" width="280" height="88"/><text x="180" y="142">Freqtrade container</text><text x="180" y="163" class="small">H1ChannelBreakout · protections</text><text x="180" y="181" class="small">API on 127.0.0.1 · Telegram</text></g>
+        <g class="node"><rect x="40" y="242" width="280" height="56"/><text x="180" y="266">Trade DB</text><text x="180" y="285" class="small">SQLite</text></g>
+        <g class="node"><rect x="40" y="342" width="280" height="56"/><text x="180" y="366">Host timers</text><text x="180" y="385" class="small">health ping · backups</text></g>
+        <g class="node"><rect x="40" y="422" width="280" height="56"/><text x="180" y="446">Jev worker (optional)</text><text x="180" y="465" class="small">no exchange credentials</text></g>
+        <g class="node"><rect x="40" y="502" width="280" height="56"/><text x="180" y="526">Read-only checks</text><text x="180" y="545" class="small">preflight · reconcile</text></g>
+        <path d="M180 68V108" class="edge orders" marker-start="url(#arrow-tall)" marker-end="url(#arrow-tall)"/><text x="190" y="92" class="edge-label start">orders · data</text>
+        <path d="M180 198V240" class="edge" marker-end="url(#arrow-tall)"/><text x="190" y="223" class="edge-label start">writes</text>
+        <path d="M180 342V300" class="edge" marker-end="url(#arrow-tall)"/><text x="190" y="325" class="edge-label start">backs up</text>
+        <path d="M320 450H344V154H322" class="edge dashed" marker-start="url(#arrow-tall)" marker-end="url(#arrow-tall)"/><text x="352" y="300" class="edge-label" transform="rotate(90 352 300)">candidates, verdicts</text>
+        <path d="M40 530H16V38H38" class="edge dashed" marker-end="url(#arrow-tall)"/><text x="10" y="300" class="edge-label" transform="rotate(-90 10 300)">read only</text>
+      </svg>
+      <ul class="plain">
+        <li>No project code calls an order-creating method; a test enforces this.</li>
+        <li>The optional Jev model filter can only block new entries, fails closed, and has no credentials. It has no provider yet.</li>
+        <li>systemd timers for restic backups and a dead-man's-switch health ping; restores come back <code>stopped</code>.</li>
+      </ul>
     </section>
   </main>
 
-  <footer class="wrap colophon">
-    <dl>
-      <div><dt>Data</dt><dd><code>research/experiments/H1/equity-curves.json</code></dd></div>
-      <div><dt>Rebuilt by</dt><dd><code>make research ARGS=equity-curves</code></dd></div>
-      <div><dt>Source</dt><dd><a href="https://github.com/sebastianspicker/schrodingers-quant">github.com/sebastianspicker/schrodingers-quant</a></dd></div>
-    </dl>
-    <p>Not investment advice. Set in Source Serif 4 and Commit Mono.</p>
+  <footer class="wrap foot">
+    <p>
+      Data: <code>research/experiments/H1/equity-curves.json</code>, rebuilt by <code>make research ARGS=equity-curves</code>.
+      Source: <a href="https://github.com/sebastianspicker/schrodingers-quant">github.com/sebastianspicker/schrodingers-quant</a>.
+    </p>
+    <p>Research code, not investment advice.</p>
   </footer>
 
   <div class="tooltip" id="tooltip" role="status" hidden></div>
