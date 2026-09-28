@@ -32,7 +32,7 @@ only when a test or drill shows a gap in Freqtrade
 | Module | Responsibility | Entry point |
 | --- | --- | --- |
 | `sq.config` | Tracked base config path; load layered Freqtrade config; tracked-default invariants; credential checks for deployable layers; strategy load | `python -m sq.config` (`make validate*`) |
-| `sq.live.preflight` | Read-only: can a stake enter and still exit at the stop after fees and precision? Exit 0 feasible, 2 infeasible, 1 error | `make preflight` |
+| `sq.live.preflight` | Read-only: can a stake enter and still exit at the stop after fees and precision? The live-pilot mode also requires authenticated fee and balance reads. Exit 0 feasible, 2 infeasible, 1 error | `make preflight`; `make preflight-live` |
 | `sq.live.reconcile` | Read-only: trade DB vs Kraken order history and balance. Exit 0 match, 3 mismatch, 1 error | `make reconcile` |
 | `sq.jev.protocol` | The Jev file contract (names, JSONL, UTC timestamps, decisions) | — |
 | `sq.jev.providers`, `sq.jev.worker` | Assess recorded candidates under a timeout; single instance; append assessments | `python -m sq.jev.worker` |

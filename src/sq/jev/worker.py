@@ -41,11 +41,11 @@ import json
 import logging
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from queue import Empty, Queue
+from threading import Lock, Thread
 
 from sq.jev.protocol import (
     ASSESSMENTS_FILENAME,
@@ -67,6 +67,13 @@ LOCK_FILENAME = "worker.lock"
 
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 DEFAULT_PROMPT_PATH = PROMPTS_DIR / "v1.txt"
+
+# Python cannot forcibly stop a running thread. Keep at most one provider call
+# alive past its deadline; until it returns, later candidates time out without
+# starting more calls. A real network provider must also set its own request
+# timeout so the one discarded call eventually releases its resources.
+_provider_threads: dict[int, Thread] = {}
+_provider_threads_lock = Lock()
 
 
 # --- prompt versioning -------------------------------------------------
@@ -166,24 +173,65 @@ def read_new_candidates(
 # --- assessment ------------------------------------------------------
 
 
+def _assess_in_thread(
+    provider: Provider,
+    candidate: dict,
+    prompt: str,
+    results: Queue[tuple[Assessment | None, str | None]],
+) -> None:
+    try:
+        results.put((provider.assess(candidate, prompt), None))
+    except Exception as exc:  # the provider is untrusted, third-party code
+        results.put((None, exc.__class__.__name__))
+
+
 def assess_with_timeout(
     provider: Provider, candidate: dict, prompt: str, timeout_seconds: float
 ) -> tuple[Assessment | None, str | None]:
     """Run provider.assess under a bounded timeout.
 
-    Returns (assessment, error_class_name); exactly one is None. Any
-    exception, including a timeout, is caught here: the worker loop never
-    raises out of this function.
+    Returns (assessment, error_class_name); exactly one is None. Any exception
+    or deadline expiry is caught here: the worker loop never waits for a late
+    result. The late call runs in one daemon thread and its result is discarded;
+    another call for the same provider cannot start until that thread returns.
     """
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(provider.assess, candidate, prompt)
+    if timeout_seconds <= 0:
+        return None, "TimeoutError"
+
+    provider_key = id(provider)
+    with _provider_threads_lock:
+        existing = _provider_threads.get(provider_key)
+        if existing is not None:
+            if existing.is_alive():
+                return None, "TimeoutError"
+            _provider_threads.pop(provider_key, None)
+
+        results: Queue[tuple[Assessment | None, str | None]] = Queue(maxsize=1)
+        thread = Thread(
+            target=_assess_in_thread,
+            args=(provider, candidate, prompt, results),
+            name="jev-provider-assessment",
+            daemon=True,
+        )
+        _provider_threads[provider_key] = thread
         try:
-            return future.result(timeout=timeout_seconds), None
-        except FutureTimeoutError:
-            future.cancel()
-            return None, "TimeoutError"
-        except Exception as exc:  # the provider is untrusted, third-party code
+            thread.start()
+        except Exception as exc:
+            _provider_threads.pop(provider_key, None)
             return None, exc.__class__.__name__
+
+    try:
+        result = results.get(timeout=timeout_seconds)
+    except Empty:
+        return None, "TimeoutError"
+    # The helper's queue write is its final action. Join the now-completed
+    # thread before admitting another call, avoiding a race where a fast result
+    # is mistaken for an assessment that is still in flight.
+    thread.join()
+    with _provider_threads_lock:
+        if _provider_threads.get(provider_key) is thread:
+            _provider_threads.pop(provider_key, None)
+    return result
 
 
 def build_assessment_record(

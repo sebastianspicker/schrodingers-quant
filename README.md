@@ -104,9 +104,11 @@ The page also works on a phone and follows your system's dark mode.
   [Debian 13 runbook](ops/README.md) and a
   [14-day soak checklist](ops/soak-checklist.md).
 - **Read-only live tooling.** `make preflight` checks whether a stake can enter
-  and still exit at the stop after fees, minimums and precision.
-  `make reconcile` compares the trade database with Kraken. Neither can place
-  or cancel an order.
+  and still exit at the stop after fees, minimums and precision;
+  `make preflight-live` additionally requires authenticated fee and balance
+  reads. `make reconcile` compares the trade database with bounded Kraken
+  history and fails if that history may be incomplete. None can place or
+  cancel an order.
 - **An optional model filter (Jev).** A worker without exchange credentials can
   approve or reject entry candidates. Exits never wait for it, and a missing
   answer blocks the entry. There is no real model provider yet; see

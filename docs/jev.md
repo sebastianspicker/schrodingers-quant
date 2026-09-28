@@ -136,8 +136,10 @@ once per `candidate_id`, ever:
 present, is the provider's own confidence in its decision, **not** a calibrated
 probability of trade profit. A provider exception or timeout is recorded as
 `decision: "abstain"` with `error` set to the exception's class name (or
-`"TimeoutError"`). The worker never crashes and never silently drops a
-candidate.
+`"TimeoutError"`). A late provider call cannot hold up the worker loop, and at
+most one late call per provider remains in flight; a real provider must also
+set its own network timeout so that discarded call releases its resources. The
+worker never crashes and never silently drops a candidate.
 
 **`worker_cursor.txt`** stores a byte offset into `candidates.jsonl`, so a
 restarted worker resumes without rescanning the whole file.
