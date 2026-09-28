@@ -208,18 +208,68 @@ def test_provider_timeout_is_recorded_as_abstain_with_timeout_error(tmp_path):
     paths = make_paths(tmp_path)
     write_candidate(paths["candidates_path"], "cand-1")
 
+    start = time.monotonic()
     processed = worker.process_once(
         **paths,
-        provider=slow_provider(0.3),
+        provider=slow_provider(0.5),
         prompt="p",
         prompt_version="v1",
         timeout_seconds=0.05,
     )
+    elapsed = time.monotonic() - start
 
     assert processed == 1
+    assert elapsed < 0.2
     record = read_jsonl(paths["assessments_path"])[0]
     assert record["decision"] == "abstain"
     assert record["error"] == "TimeoutError"
+
+
+def test_timeout_does_not_start_more_calls_while_the_late_call_is_running():
+    calls = []
+
+    def slow(candidate, prompt):
+        calls.append(candidate)
+        time.sleep(0.5)
+        return Assessment(
+            decision="approve", rationale="late", confidence=None, model="t", model_version="v1"
+        )
+
+    provider = ScriptedProvider(slow)
+
+    assert worker.assess_with_timeout(provider, {"candidate_id": "one"}, "p", 0.05) == (
+        None,
+        "TimeoutError",
+    )
+    assert worker.assess_with_timeout(provider, {"candidate_id": "two"}, "p", 0.05) == (
+        None,
+        "TimeoutError",
+    )
+    assert calls == [{"candidate_id": "one"}]
+
+
+def test_provider_can_run_again_after_a_late_call_finishes():
+    calls = []
+
+    def slow(candidate, prompt):
+        calls.append(candidate)
+        time.sleep(0.1)
+        return Assessment(
+            decision="approve", rationale="ok", confidence=None, model="t", model_version="v1"
+        )
+
+    provider = ScriptedProvider(slow)
+
+    assert worker.assess_with_timeout(provider, {"candidate_id": "late"}, "p", 0.02) == (
+        None,
+        "TimeoutError",
+    )
+    time.sleep(0.15)
+    assessment, error = worker.assess_with_timeout(provider, {"candidate_id": "next"}, "p", 0.2)
+
+    assert error is None
+    assert assessment is not None and assessment.decision == "approve"
+    assert calls == [{"candidate_id": "late"}, {"candidate_id": "next"}]
 
 
 def test_malformed_candidate_line_is_skipped_without_crashing(tmp_path):
