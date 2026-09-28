@@ -73,7 +73,11 @@ def _docker_stub(tmp_path: Path) -> Path:
     return bin_dir
 
 
-def _run_backup(sq_home: Path, extra_path: Path | None = None) -> subprocess.CompletedProcess:
+def _run_backup(
+    sq_home: Path,
+    extra_path: Path | None = None,
+    env_overrides: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess:
     env = dict(os.environ)
     if extra_path is not None:
         env["PATH"] = f"{extra_path}{os.pathsep}{env['PATH']}"
@@ -83,6 +87,8 @@ def _run_backup(sq_home: Path, extra_path: Path | None = None) -> subprocess.Com
     for var in ("RESTIC_REPOSITORY", "SQ_BACKUP_ROOT", "SQ_BACKUP_KEEP_LOCAL", "COMPOSE_FILE"):
         env.pop(var, None)
     env["SQ_HOME"] = str(sq_home)
+    if env_overrides:
+        env.update(env_overrides)
     return subprocess.run(
         [str(BACKUP_SH)], env=env, capture_output=True, text=True, stdin=subprocess.DEVNULL
     )
@@ -152,3 +158,27 @@ def test_backup_fails_with_no_sqlite_files(tmp_path):
 
     assert result.returncode != 0, result.stdout + result.stderr
     assert not _backup_dirs(sq_home)
+
+
+def test_failed_restic_push_removes_plaintext_secrets(tmp_path):
+    sq_home = _sq_home(tmp_path)
+    _make_sqlite_db(sq_home / "user_data" / "runtime" / "dry-run.sqlite")
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    restic = bin_dir / "restic"
+    restic.write_text("#!/bin/sh\nexit 42\n")
+    restic.chmod(0o755)
+
+    result = _run_backup(
+        sq_home,
+        bin_dir,
+        env_overrides={"RESTIC_REPOSITORY": "test:repository"},
+    )
+
+    assert result.returncode != 0, result.stdout + result.stderr
+    dirs = _backup_dirs(sq_home)
+    assert len(dirs) == 1
+    assert not (dirs[0] / "config" / "local").exists()
+    assert not list((sq_home / "user_data" / "runtime" / "backups").rglob("secrets.json"))
+    assert (sq_home / "config" / "local" / "secrets.json").is_file()
