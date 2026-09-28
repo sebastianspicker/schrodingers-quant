@@ -7,8 +7,8 @@ result under RECORD_DIR with provenance. Every backtest writes both
 metrics on the fixed notional, which decide H1's criteria).
 
 Every step takes its paths as keyword arguments defaulting to h1.py's
-constants, so callers (tests, in particular) can point a run at a temporary
-directory without changing the Freqtrade argv the step builds.
+constants, so callers can point a run at a temporary directory without
+changing the Freqtrade argv the step builds.
 """
 
 import json

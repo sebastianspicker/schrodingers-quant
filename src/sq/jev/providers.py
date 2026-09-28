@@ -4,7 +4,7 @@ Providers never receive exchange credentials and never place or influence an
 order directly; `sq.jev.worker` is the only caller, and it writes provider
 output to `assessments.jsonl` for `H1JevShadow` (or a human) to read later. A
 model API key, when one exists, comes from an environment variable only (e.g.
-`JEV_API_KEY`), never from Freqtrade config, per AGENTS.md.
+`JEV_API_KEY`), never from Freqtrade config.
 """
 
 import os
@@ -29,8 +29,8 @@ class Assessment:
     (timestamps, latency, error) is added.
 
     `confidence`, when present, is model output as-is and is NOT a calibrated
-    probability of trade profit (see docs/jev.md and
-    AGENTS.md); do not treat it as one in any later evaluation.
+    probability of trade profit (see docs/jev.md); do not treat it as one in
+    any later evaluation.
     """
 
     decision: str
@@ -54,7 +54,7 @@ class NullProvider:
 
     The default provider: it lets shadow mode run end-to-end (candidates
     recorded, a real assessments.jsonl produced) without any model access,
-    and is what tests and local dry runs use.
+    and is what local dry runs use.
     """
 
     model = "null"

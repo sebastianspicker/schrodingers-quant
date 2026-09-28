@@ -9,8 +9,7 @@ Compares, for the bot's whitelisted pair(s):
 
 Opens the SQLite DB read-only (`file:...?mode=ro`). Credentials are read only
 from the layered config and are never printed or logged. This module never
-references any order-mutating ccxt method (create/cancel/edit order) — see
-tests/live/test_reconcile.py for the guard.
+references any order-mutating ccxt method (create/cancel/edit order).
 
 Exit code: 0 match, 3 mismatch, 1 error.
 """

@@ -179,7 +179,7 @@ docker compose --profile jev up -d jev-worker
 
 The file names, JSONL format and decisions are defined once, in
 `sq.jev.protocol`. `H1JevShadow` keeps its own copy, because strategies never
-import `sq`; `tests/jev/test_protocol.py` checks that the two agree.
+import `sq`; the two copies must remain aligned.
 
 ## Evaluation (offline comparison)
 
@@ -220,11 +220,10 @@ harness does not invent one now.
   on real forward data (collected after implementation); nothing here backfills
   or simulates that. It must also compare the model against a deterministic rule
   on the same candidates before attributing any value to the model.
-- **Live filter mode** is a separate decision gated on that evidence, per the
-  project rules in AGENTS.md ("Compare the same baseline with and without Jev
-  ... Paper fills are not evidence of real execution quality"). The code makes
-  filter mode possible to switch on later; it does not recommend switching it
-  on.
+- **Live filter mode** is a separate decision gated on a comparison of the
+  same baseline with and without Jev on forward data. Paper fills are not
+  evidence of real execution quality. The code makes filter mode possible to
+  switch on later; it does not recommend switching it on.
 
 ## Glossary
 

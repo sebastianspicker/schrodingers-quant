@@ -4,9 +4,8 @@ Used by `sq.jev.worker` (reads candidates.jsonl, writes assessments.jsonl) and
 `sq.research.jev_evaluation` (reads both, offline). The writer of candidates
 and reader of assessments is `user_data/strategies/H1JevShadow.py`, which
 never imports `sq` (its class source is part of every candidate_id) and keeps
-its own copy of these names; tests/jev/test_protocol.py checks that the two
-agree. Stdlib-only, so the worker stays free of exchange code
-(tests/test_architecture.py).
+its own copy of these names. The copies must stay aligned. This module is
+stdlib-only, so the worker stays free of exchange code.
 """
 
 import json

@@ -19,9 +19,9 @@ def load_config(paths: list[Path | str], run_mode: RunMode = RunMode.DRY_RUN) ->
 
     Pins `user_data_dir` to the image's `/freqtrade/user_data` (the container
     path the configs already use) instead of Freqtrade's default
-    `Path.cwd() / "user_data"`: the `tools` and `test` services run from a
-    read-only `/workspace`, where Freqtrade's creation of user_data subfolders
-    would fail.
+    `Path.cwd() / "user_data"`: the `tools` service runs from a read-only
+    `/workspace`, where Freqtrade's creation of user_data subfolders would
+    fail.
     """
     return Configuration(
         {"config": [str(path) for path in paths], "user_data_dir": "/freqtrade/user_data"},

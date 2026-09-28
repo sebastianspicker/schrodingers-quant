@@ -1,11 +1,58 @@
-# Local tooling
+# Tool state and environments
 .venv/
 __pycache__/
 *.py[cod]
 .ruff_cache/
+.codacy/
+.repowise/
+.codegraph/
+.serena/
+.impeccable/
+.history/
+.cache/
+
+# Tests and coverage
+tests/
+pytest.ini
+conftest.py
+jest.config.*
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Agent files and instructions
+.agents/
+.claude/
+.codex/
+.cursor/
+.aider*
+.continue/
+.windsurf/
+.mcp.json
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+.cursorrules
+.github/copilot-instructions.md
+
+# Nested worktrees and checkouts
+.worktrees/
+worktrees/
+
+# Local helper scripts and work-in-progress documents
+scripts/local/
+local-scripts/
+*.local.sh
+docs/drafts/
+docs/plans/
+TODO.md
+ROADMAP.md
+PRD.md
+*_draft.md
+*DESIGN_BRIEF.md
+rewrite_report.md
+
+# OS and editor files
 .DS_Store
 .idea/
 .vscode/
@@ -40,13 +87,6 @@ user_data/data/*
 !user_data/backtest_results/
 user_data/backtest_results/*
 !user_data/backtest_results/.gitkeep
-
-# Agent coordination notes
-.agents/
-
-# Claude Code: share project settings only
-.claude/*
-!.claude/settings.json
 
 # Built GitHub Pages demo (pages/build.sh)
 build/

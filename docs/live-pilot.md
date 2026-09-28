@@ -67,14 +67,14 @@ ones:
    With `stake_amount: 8` and `available_capital: 10`, after roughly one full
    stop-out the remaining balance can fall below the €8 stake. Freqtrade then
    stops opening new trades on its own (insufficient stake), with no automatic
-   top-up. This is an intended hard cap on the pilot's size, not a bug: see
-   `AGENTS.md` on automatic capital increases.
+   top-up. This is an intended hard cap on the pilot's size, not a bug.
+   Automatic top-ups and capital increases are prohibited.
 4. `config/local/secrets.json` (ignored): the exchange `key` and `secret`, and
    the Telegram and API credentials.
 
 `config/live.json` is **only ever applied explicitly** as one of these layers.
-It is never part of the default `make validate` / `make up` path (enforced by
-`tests/live/test_live_overlay.py`). Check the merged layers first:
+It is never part of the default `make validate` / `make up` path. Check the
+merged layers first:
 
 ```sh
 docker compose run --rm tools python -m sq.config \
@@ -167,9 +167,8 @@ maintainer's explicit review, if any of the following occurs:
 - Any doubt about whether the bot's live orders match its logged or database
   state.
 
-Continuing or scaling the pilot past its initial scope is a decision record
-(ADR), never an automatic action (`AGENTS.md`: no automatic capital
-increases).
+Continuing or scaling the pilot past its initial scope requires an explicit
+maintainer decision; it is never automatic.
 
 ## 7. Preflight evidence
 
