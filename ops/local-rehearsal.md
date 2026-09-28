@@ -91,9 +91,8 @@ healthchecks.io accepts POST) to additionally exercise the success-delivery
 path for the fail cases, shown in the table above.
 
 Disk check: `disk usage 62.3%` on the development machine's filesystem
-(below the default 85% threshold) throughout. The disk-full path is only
-exercised via `tests/ops/test_health_ping.py`'s unit tests and the D5 drill
-in the soak checklist, not locally against a real full disk.
+(below the default 85% threshold) throughout. The disk-full path is covered by
+the D5 drill in the soak checklist, not locally against a real full disk.
 
 ## 4. `ops/backup.sh` then `ops/restore.sh`
 

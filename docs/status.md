@@ -1,8 +1,8 @@
 # Status
 
-**As of 2026-09-27.** For how the system is built, see
-[architecture](architecture.md). For why, see the [ADRs](adr/README.md)
-(architecture decision records).
+**As of 2026-09-28.** For how the system is built, see
+[architecture](architecture.md). The H1 research decision is recorded in
+[ADR-0005](adr/0005-h1-go-after-sizing-correction.md).
 
 ## In short
 
@@ -28,26 +28,25 @@
 | --- | --- |
 | Runtime | Freqtrade 2026.8, pinned by image digest in `compose.yaml`; config in layers (base → VPS → live → secrets) |
 | Strategies | `H1ChannelBreakout` (tracked, dry-run, frozen); `H1JevShadow` (modes off, shadow and filter) |
-| Research | One pipeline (`make research ARGS=…`, [ADR-0007](adr/0007-research-pipeline-in-python.md)): Binance proxy data validated against Kraken, data manifest, bias checks, fixed-stake backtests, marked-to-market metrics with provenance, [H1 record](../research/experiments/H1/record.md) |
+| Research | One pipeline (`make research ARGS=…`): Binance proxy data validated against Kraken, data manifest, bias checks, fixed-stake backtests, marked-to-market metrics with provenance, [H1 record](../research/experiments/H1/record.md) |
 | Operations | Health ping to a dead-man's switch; backup of every trade database and the Jev records (plaintext secret staging is removed even when restic fails); restore of a named database that leaves the bot stopped; image pruning; hardened systemd units; [Debian 13 runbook](../ops/README.md); soak checklist |
 | Live tooling | Read-only public preflight plus an account-required live-pilot target; bounded account-wide reconciliation that fails on incomplete history; credential-free `config/live.json`; secrets validation for deployable overlays |
 | Jev | Candidate recording, credential-free worker with a bounded main-loop deadline and null provider, fail-closed filter, leakage-safe evaluation harness; no real provider ([Jev](jev.md)) |
-| Checks | `make ci`: lint, format, shellcheck, Compose variants, three config validations, pytest in the pinned image; the same in GitHub Actions |
+| Checks | `make ci`: lint, format, shellcheck, Compose variants and three config validations; the same in GitHub Actions |
 | Demo | [GitHub Pages](https://sebastianspicker.github.io/schrodingers-quant/), built from `pages/` and the recorded H1 equity curves (`make research ARGS=equity-curves`, which refuses to write if a curve disagrees with the record) |
 
 ## Verified
 
 What has actually been run and checked, newest first:
 
-- **Safety review hardening (2026-09-27).** `make ci` exits 0 locally (182
-  tests). A failed-restic stub confirms plaintext `config/local` staging is
-  removed; reconciliation tests cover account-wide offset pagination, the page
-  cap and a missing base balance; live preflight refuses to pass without both
-  authenticated fee and balance reads. A timing regression proves a 50 ms Jev
-  timeout returns in under 200 ms (about 55 ms in the direct pinned-image
-  probe), rather than waiting for the 300–500 ms provider call.
-- **ADR-0007 differential checks (2026-09-25).** A differential check reruns
-  a step and compares its output with the tracked record. `make research` with
+- **Safety review hardening (2026-09-27).** Pre-publication verification
+  confirmed that failed restic pushes remove plaintext `config/local` staging,
+  account-wide reconciliation handles bounded pagination and missing base
+  balances, and live preflight refuses to pass without authenticated fee and
+  balance reads. A direct pinned-image probe confirmed that a 50 ms Jev timeout
+  returns in about 55 ms rather than waiting for the 300–500 ms provider call.
+- **Research-pipeline differential checks (2026-09-25).** A differential
+  check reruns a step and compares its output with the tracked record. `make research` with
   `manifest`, `train`, `validation`, `sensitivity`, `eth-robustness`,
   `benchmark` for all three periods, and `equity-curves` reproduced every
   tracked record's metrics. Only `generated_at`, result zip names and the
@@ -61,10 +60,10 @@ What has actually been run and checked, newest first:
     records and the pipeline mark through that day. A rerun would report
     +39.84 % instead of +39.81 % net, with the same 30.37 % drawdown, so the
     decision would not change.
-- **ADR-0006 differential checks (2026-09-24).** `research/run.sh train`, the
-  train benchmark and the data manifest reproduced the recorded H1 results and
-  provenance exactly; marked-to-market drawdown on the recorded validation
-  result matched. The held-out window was not rerun.
+- **Earlier-pipeline differential checks (2026-09-24).** The train run, train
+  benchmark and data manifest reproduced the recorded H1 results and provenance
+  exactly; marked-to-market drawdown on the recorded validation result matched.
+  The held-out window was not rerun.
 - **Local Docker drills (2026-09-24).** `make up` loads `H1ChannelBreakout`
   with its protections, in state `STOPPED`, with no errors. Both strategies load
   in the bot container without `src/`. A backup taken with the container
@@ -96,7 +95,7 @@ None of the following has been tested yet:
 | --- | --- | --- |
 | 14-day VPS soak with drills; doubles as H1's forward paper test | Blocked | A Debian 13 VPS ([runbook](../ops/README.md), [soak](../ops/soak-checklist.md)) |
 | €10 live pilot drills: forced round trip, restart with an open position, exchange stop after restart, key revocation | Blocked | The maintainer's authorization, a funded isolated Kraken account, a trade-only key; the soak first ([live pilot](live-pilot.md)) |
-| Decision on continuing or scaling after the pilot | Open | An ADR; never automatic |
+| Decision on continuing or scaling after the pilot | Open | An explicit maintainer decision; never automatic |
 | Jev real provider and shadow assessments on forward data | Blocked | Jev API access and documentation; a spending cap |
 | Jev matched evaluation (baseline vs filter) | Harness done | Recorded assessments; a comparison against a deterministic rule before crediting the model |
 | Jev live filter | Mechanism done, off | A real provider and a positive matched evaluation |
@@ -116,7 +115,7 @@ None of the following has been tested yet:
 ### Deferred capabilities
 
 Deferred means in scope, but started only when evidence calls for it; not
-dropped ([ADR-0001](adr/0001-evidence-first-restructure.md)).
+dropped.
 
 | Capability | Trigger |
 | --- | --- |
@@ -137,14 +136,6 @@ Gates are the milestones the project passes in order.
 | G-3 | Unattended Debian operation: soak passed | Not reached |
 | G-4 | Live execution: pilot drills passed | Not reached |
 | G-5 | Economic evidence: positive forward record after costs | Not reached |
-
-## Background
-
-The repository was rebuilt around its current layout before the first commit
-(ADR-0006). An earlier implementation was reviewed on 2026-09-22 (164 files,
-594 of 619 tests passing on macOS). That review and the retired planning
-documents were kept outside the repository; they are not part of this history
-and not CI evidence.
 
 ## Glossary
 

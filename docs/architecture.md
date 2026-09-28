@@ -1,9 +1,7 @@
 # Architecture
 
-Why the system has this shape: [ADRs](adr/README.md) (the layout is
-[ADR-0006](adr/0006-one-package-one-runtime-definition.md), the research
-pipeline and Jev boundary [ADR-0007](adr/0007-research-pipeline-in-python.md)). What exists and
-what is verified: [status](status.md).
+This page defines the system boundaries and ownership. What exists and what is
+verified is tracked in [status](status.md).
 
 ## Principle
 
@@ -12,8 +10,7 @@ orders, fills, trade state, restart recovery, protections, the API server and
 Telegram control. Project code adds strategies, configuration layers, read-only
 checks, research tooling, an optional model worker and host operations around
 it. Custom execution infrastructure (an intent journal, a supervisor) is added
-only when a test or drill shows a gap in Freqtrade
-([ADR-0001](adr/0001-evidence-first-restructure.md)).
+only when a drill shows a gap in Freqtrade.
 
 ## Components and ownership
 
@@ -45,8 +42,6 @@ only when a test or drill shows a gap in Freqtrade
 
 ### Dependency rules
 
-Enforced by `tests/test_architecture.py`:
-
 - Every module in `sq.jev` imports only the standard library and `sq.jev`:
   no ccxt, Freqtrade, pandas, `sq.live`, `sq.config` or `sq.research`. The
   worker container cannot see exchange code or credentials. Analysis of Jev's
@@ -63,9 +58,8 @@ Enforced by `tests/test_architecture.py`:
 - `ops/*.py` is standard library only (Debian's system Python).
 
 `H1JevShadow` therefore keeps its own copy of the file-name constants and
-readers. `tests/jev/test_protocol.py` has a contract test: the strategy's
-writer and reader round-trip with the worker, and the constants and decisions
-match `sq.jev.protocol`.
+readers. Its writer, reader, constants and decisions must remain aligned with
+`sq.jev.protocol`.
 
 ## Runtime definition
 
@@ -78,7 +72,6 @@ anchor) and of how every in-image command runs:
 | `jev-worker` | `jev` | `src` ro, `user_data/runtime/jev` → `/jev-runtime` | opt-in shadow runs |
 | `tools` | `tools` | repo ro → `/workspace`, config, strategies, runtime | `make validate*`, `preflight`, `reconcile` |
 | `research` | `tools` | `src` ro, `user_data` → `/freqtrade/user_data`, `research` → `/freqtrade/research`, strategies ro | `make research` (`python -m sq.research`) |
-| `test` | `tools` | repo ro only; image built from `tests/Dockerfile` | `make test` |
 
 Container paths are a contract: configs name `/freqtrade/strategies` and
 `/freqtrade/user_data/runtime/*.sqlite`, and recorded research provenance names
@@ -94,11 +87,10 @@ live pilot) → `config/local/secrets.json`. Compose overlays restate the
 `compose.vps.example.yaml` (VPS). The copies live at the repo root, are
 ignored by git, and are selected with `COMPOSE_FILE` in `.env`.
 
-Invariants (tests and `make validate`): base alone is spot, dry-run, stopped,
+Invariants checked by `make validate`: base alone is spot, dry-run, stopped,
 credential-free, without API/Telegram and without forced entries. A layer that
 enables the API or Telegram needs non-placeholder credentials. `live.json`
-contains no credentials, and default targets (`validate`, `up`, `test`) never
-name it.
+contains no credentials, and default targets (`validate`, `up`) never name it.
 
 ## Data flows and state
 
@@ -129,10 +121,9 @@ errors name only the exception class.
 
 ## Contracts for deferred execution work
 
-Freqtrade's own order handling is used until a drill shows a gap
-(ADR-0001). If an intent journal, a custom adapter or stricter pause handling
-is ever built, it must satisfy these requirements, carried over from the
-earlier implementation's design notes:
+Freqtrade's own order handling is used until a drill shows a gap. If an intent
+journal, a custom adapter or stricter pause handling is ever built, it must
+satisfy these requirements:
 
 1. Persist intent before the first possible order send. An ambiguous
    submission is quarantined as unknown and reconciled against the exchange,

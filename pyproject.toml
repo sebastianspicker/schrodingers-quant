@@ -20,12 +20,6 @@ per-file-target-version = { "ops/**/*.py" = "py313" }
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
-[tool.pytest.ini_options]
-# Tests run inside the pinned Freqtrade image (`make test`); see tests/Dockerfile.
-testpaths = ["tests"]
-pythonpath = ["src", "user_data/strategies", "ops"]
-addopts = "-p no:cacheprovider"
-
 [dependency-groups]
 dev = [
     "ruff==0.16.8",

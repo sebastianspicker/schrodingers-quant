@@ -8,8 +8,8 @@ Hypothesis: [research/hypotheses/H1.md](../../hypotheses/H1.md) (predeclared
 > **Reworded 2026-09-25 for readability, at the maintainer's request.** Sections
 > were reordered to put the decision first. Every number, hash, path, date and
 > table value is unchanged; the JSON files in this folder remain the primary
-> record. The previous wording is in `git show b753551:research/experiments/H1/record.md`
-> plus the uncommitted path-mapping note of 2026-09-25.
+> record. The previous wording is in
+> `git show 63aed0f:research/experiments/H1/record.md`.
 
 ## In short
 
@@ -166,18 +166,15 @@ held-out strategy evaluation.
 
 ## Provenance
 
-> Paths below are as of the run (2026-09-24, before
-> [ADR-0006](../../../docs/adr/0006-one-package-one-runtime-definition.md)):
+> Paths below are as of the run (2026-09-24):
 > `research/scripts/*.py` now live unchanged in behavior in `src/sq/research/`,
-> `Dockerfile.test` is `tests/Dockerfile`, and the restructure plan is retired.
-> Since [ADR-0007](../../../docs/adr/0007-research-pipeline-in-python.md),
 > `research/run.sh <subcommand>` is `make research ARGS="<subcommand>"`, and
 > `research/scripts/mtm_drawdown.py` is `sq.research.metrics.mtm_report`, run
 > by every backtest step.
 > Container paths and file hashes recorded here are unchanged.
 
 - **Image**: `freqtradeorg/freqtrade:2026.8@sha256:4d23160b501d2b34579e76f57ad75edfa274967cd0dd824ff1c1b86d8c166ab4`
-  (pinned; matches `Dockerfile.test`).
+  (pinned; matches `compose.yaml`).
 - **Strategy file**: `user_data/strategies/H1ChannelBreakout.py`,
   SHA-256 `142f95a482cf41f03bf27ed071d5464c63b8abcfa64637b6a6608f5f70d7fc8e`.
 - **Sensitivity strategy file**: `research/strategies/H1Sensitivity.py`,

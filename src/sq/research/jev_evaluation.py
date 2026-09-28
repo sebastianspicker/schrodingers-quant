@@ -46,9 +46,8 @@ def load_trades(source: Path | str | list[dict]) -> pd.DataFrame:
     if isinstance(source, list):
         trades = pd.DataFrame(source)
     else:
-        # Imported lazily: only needed for the file-export path, so unit
-        # tests that pass a plain list of dicts never need the Freqtrade
-        # backtest result format.
+        # Imported lazily: only needed for the file-export path; callers that
+        # pass a plain list of dicts never need the Freqtrade result format.
         from freqtrade.data.btanalysis import load_backtest_data
 
         trades = load_backtest_data(Path(source))

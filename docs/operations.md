@@ -25,8 +25,7 @@ machine. For a server, use the runbooks:
 | `make validate` | Tracked `config/base.json` alone: invariants and strategy load |
 | `make validate-local` | Also base + `config/local/secrets.json` if present |
 | `make validate-live` / `make validate-vps` | Base + tracked live or VPS overlay |
-| `make test` | Build the `test` image and run pytest inside it (repository mounted read-only) |
-| `make ci` | All of the above |
+| `make ci` | Static checks plus the base, live and VPS validations above |
 | `make research ARGS="…"` | `python -m sq.research` subcommands in the `research` service; with no argument it lists them |
 | `make preflight ARGS="--pair BTC/EUR --stake 8 --stoploss -0.20"` | Read-only Kraken feasibility check |
 | `make preflight-live ARGS="--pair BTC/EUR --stake 8 --stoploss -0.20"` | Same check with live layers; requires authenticated fee and balance reads |
@@ -37,7 +36,7 @@ machine. For a server, use the runbooks:
 | `make research ARGS=equity-curves`, then `sh pages/build.sh` | Rebuild the demo's data from the recorded backtests and assemble the site in `build/pages/` (published by `.github/workflows/pages.yml`) |
 
 `make up` starts only the bot, whose state is `stopped` until `/start`. Every
-other in-image command runs as `docker compose run --rm <tools|research|test> …`
+other in-image command runs as `docker compose run --rm <tools|research> …`
 (Compose profile `tools`). The Jev worker starts only with
 `docker compose --profile jev up -d jev-worker`.
 
@@ -54,9 +53,10 @@ tickets or chat.
 
 ## What checks do not show
 
-Validation and tests do not show exchange connectivity, order acceptance,
-partial-fill handling, exchange-side stops, restart reconciliation with real
-orders, VPS behavior or profitability. Those need the soak and the live pilot.
+Static and configuration validation do not show exchange connectivity, order
+acceptance, partial-fill handling, exchange-side stops, restart reconciliation
+with real orders, VPS behavior or profitability. Those need the soak and the
+live pilot.
 
 ## Glossary
 

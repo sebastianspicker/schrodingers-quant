@@ -6,7 +6,7 @@ only ccxt's public Kraken market data (`load_markets`, `fetch_order_book`).
 If credentials are present in the merged config, also reads the account's
 fee tier (`fetch_trading_fee`) and EUR balance (`fetch_balance`); both are
 read-only calls. This module never references any order-mutating ccxt method
-(create/cancel/edit order) — see tests/live/test_preflight.py for the guard.
+(create/cancel/edit order).
 
 Exit code: 0 feasible, 2 infeasible, 1 on error.
 """

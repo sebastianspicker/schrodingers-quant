@@ -1,7 +1,7 @@
 # Soak checklist: 14 days of unattended dry-run
 
-Per ADR-0003, soak the bot unattended on the target Debian 13 host for at
-least 14 days before any live authorization is considered. Per ADR-0005,
+Soak the bot unattended on the target Debian 13 host for at least 14 days
+before any live authorization is considered. Per ADR-0005,
 `config/base.json` selects `H1ChannelBreakout` (dry-run,
 `initial_state: stopped`), so this soak also produces forward paper-trading
 evidence for H1, not just infrastructure uptime. This is a procedure to

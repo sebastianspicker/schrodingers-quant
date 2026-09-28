@@ -1,4 +1,4 @@
-.PHONY: help check format validate validate-local validate-live validate-vps test ci research preflight preflight-live reconcile \
+.PHONY: help check format validate validate-local validate-live validate-vps ci research preflight preflight-live reconcile \
 	backup retention \
 	pull up down logs status
 
@@ -8,17 +8,16 @@ help:
 	  'format         Format Python sources' \
 	  'validate       Load tracked base config and strategy using pinned Freqtrade (Docker required)' \
 	  'validate-local Also validate config/base.json layered with config/local/secrets.json' \
-	  'test           Run the pytest suite inside the pinned Freqtrade image (Docker required)' \
 	  'validate-live  Validate base + credential-free config/live.json overlay (no exchange contact)' \
 	  'validate-vps   Validate base + VPS overlay + example secrets (tracked files only)' \
-	  'ci             Run check, validate, validate-live, validate-vps, and test in order' \
+	  'ci             Run check, validate, validate-live, and validate-vps in order' \
 	  'research       Research commands: make research ARGS="train" (see src/sq/research)' \
 	  'preflight      Read-only Kraken feasibility check: make preflight ARGS="--pair BTC/EUR --stake 8 --stoploss -0.20"' \
 	  'preflight-live Account-required check using base + live + local secrets (never places orders)' \
 	  'reconcile      Read-only DB vs Kraken reconciliation (needs config/local/secrets.json)' \
 	  'backup         Consistent SQLite + config backup (ops/backup.sh)' \
 	  'retention      Show the Docker image pruning retention would do; add ARGS=--apply to act' \
-	  'pull           Download the pinned Freqtrade image and build the tools/research/test images' \
+	  'pull           Download the pinned Freqtrade image used by all services' \
 	  'up             Start the stopped, non-trading dry-run scaffold' \
 	  'down           Stop and remove containers; retain bind-mounted state' \
 	  'logs           Follow container logs' \
@@ -43,10 +42,6 @@ validate-local:
 	  --config /freqtrade/config/base.json \
 	  $(if $(wildcard config/local/secrets.json),--config /freqtrade/config/local/secrets.json,)
 
-test:
-	docker compose build test
-	docker compose run --rm test
-
 validate-live:
 	docker compose run --rm tools python -m sq.config \
 	  --config /freqtrade/config/base.json --config /freqtrade/config/live.json
@@ -58,7 +53,7 @@ validate-vps:
 	  --config /freqtrade/config/examples/secrets.example.json \
 	  --allow-placeholders
 
-ci: check validate validate-live validate-vps test
+ci: check validate validate-live validate-vps
 
 research:
 	docker compose run --rm research python -m sq.research $(ARGS)
@@ -84,7 +79,6 @@ retention:
 
 pull:
 	docker compose --profile tools --profile jev pull --ignore-buildable
-	docker compose build test
 
 up:
 	docker compose up -d

@@ -5,7 +5,8 @@
 > **Reworded 2026-09-25 for readability, at the maintainer's request.** The
 > decision and its reasons are unchanged. One figure is written more precisely:
 > the stress-cost return, previously "+25.6 %", is given as the recorded
-> 25.55 %. The original wording is in `git show b753551:docs/adr/0005-h1-go-after-sizing-correction.md`.
+> 25.55 %. The original wording is in
+> `git show 63aed0f:docs/adr/0005-h1-go-after-sizing-correction.md`.
 
 ## In short
 
@@ -59,9 +60,8 @@ Source: [experiment record, Decision](../../research/experiments/H1/record.md#de
 - No capital beyond the pilot: that needs a forward record, per H1.md.
 - Jev work is no longer gated by the strategy; it still needs access to a model
   provider.
-- Research configs use a fixed stake from now on. `mtm_drawdown.py` (since
-  [ADR-0007](0007-research-pipeline-in-python.md), `sq.research.metrics.mtm_report`)
-  supplies the decision metrics.
+- Research configs use a fixed stake from now on.
+  `sq.research.metrics.mtm_report` supplies the decision metrics.
 
 ## Glossary
 

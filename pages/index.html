@@ -291,7 +291,7 @@
         <path d="M40 530H16V38H38" class="edge dashed" marker-end="url(#arrow-tall)"/><text x="10" y="300" class="edge-label" transform="rotate(-90 10 300)">read only</text>
       </svg>
       <ul class="plain">
-        <li>No project code calls an order-creating method; a test enforces this.</li>
+        <li>Only Freqtrade places orders; project helpers are read-only.</li>
         <li>The optional Jev model filter can only block new entries, fails closed, and has no credentials. It has no provider yet.</li>
         <li>systemd timers for restic backups and a dead-man's-switch health ping; restores come back <code>stopped</code>.</li>
       </ul>

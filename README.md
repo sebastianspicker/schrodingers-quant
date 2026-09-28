@@ -96,8 +96,8 @@ The page also works on a phone and follows your system's dark mode.
   only just, and the [experiment record](research/experiments/H1/record.md)
   explains why that is weak evidence.
 - **Safe defaults.** Spot only, dry-run, no credentials,
-  `initial_state: stopped`. A test fails if the tracked config drifts from
-  that, or if project code names an exchange method that creates orders.
+  `initial_state: stopped`. `make validate` rejects tracked config that drifts
+  from those defaults, and the project exchange helpers are read-only.
 - **Operations for one small VPS.** A health check that pings a dead-man's
   switch, consistent SQLite backups with optional restic, a restore that leaves
   the bot stopped, image pruning, hardened systemd units, a
@@ -122,14 +122,14 @@ You need Docker with Compose and [uv](https://docs.astral.sh/uv/).
 git clone https://github.com/sebastianspicker/schrodingers-quant.git
 cd schrodingers-quant
 uv sync --locked --group dev
-make ci        # lint, config validation (base, live and VPS overlays), tests
+make ci        # lint, Compose checks, and base/live/VPS config validation
 make up        # dry-run bot; stays "stopped" until started via API or Telegram
 make logs
 make down
 ```
 
-`make help` lists every target. Passing checks show that the configuration and
-code load and behave as tested. They don't show exchange connectivity, real
+`make help` lists every target. Passing checks show that the Compose files,
+configuration and strategy load. They don't show exchange connectivity, real
 fills or profitability.
 
 To run the bot on a server, follow the [Debian 13 runbook](ops/README.md). The
@@ -155,15 +155,14 @@ pairs. Other exchanges need changes there and a fresh preflight run.
 
 | Path | Contents |
 | --- | --- |
-| `compose.yaml` | The pinned Freqtrade image and every service: bot, Jev worker, tools, research, tests |
+| `compose.yaml` | The pinned Freqtrade image and every service: bot, Jev worker, tools and research |
 | `config/` | Freqtrade config layers: `base.json` (dry-run), `live.json` (explicit live overlay), `examples/`, ignored `local/` |
 | `user_data/strategies/` | `H1ChannelBreakout` (frozen), `H1JevShadow` (optional model filter) |
 | `src/sq/` | Project package: config validation, read-only live tools, Jev worker, research pipeline and analysis |
 | `research/` | Hypotheses, research configs, experiment records, research-only strategies |
 | `ops/` | Host side: health ping, backup and restore, retention, systemd units, runbooks |
 | `pages/` | The GitHub Pages demo and its screenshots |
-| `tests/` | pytest suite, run inside the pinned Freqtrade image |
-| `docs/` | [Status](docs/status.md), [architecture](docs/architecture.md), [ADRs](docs/adr/README.md), [operations](docs/operations.md), [live pilot](docs/live-pilot.md), [Jev](docs/jev.md) |
+| `docs/` | [Status](docs/status.md), [architecture](docs/architecture.md), [research decision](docs/adr/0005-h1-go-after-sizing-correction.md), [operations](docs/operations.md), [live pilot](docs/live-pilot.md), [Jev](docs/jev.md) |
 
 Research, backtests and model work run on a development machine, never on the
 VPS.
