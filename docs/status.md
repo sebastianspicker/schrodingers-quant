@@ -1,6 +1,6 @@
 # Status
 
-**As of 2026-09-25.** For how the system is built, see
+**As of 2026-09-27.** For how the system is built, see
 [architecture](architecture.md). For why, see the [ADRs](adr/README.md)
 (architecture decision records).
 
@@ -29,9 +29,9 @@
 | Runtime | Freqtrade 2026.8, pinned by image digest in `compose.yaml`; config in layers (base → VPS → live → secrets) |
 | Strategies | `H1ChannelBreakout` (tracked, dry-run, frozen); `H1JevShadow` (modes off, shadow and filter) |
 | Research | One pipeline (`make research ARGS=…`, [ADR-0007](adr/0007-research-pipeline-in-python.md)): Binance proxy data validated against Kraken, data manifest, bias checks, fixed-stake backtests, marked-to-market metrics with provenance, [H1 record](../research/experiments/H1/record.md) |
-| Operations | Health ping to a dead-man's switch; backup of every trade database and the Jev records; restore of a named database that leaves the bot stopped; image pruning; hardened systemd units; [Debian 13 runbook](../ops/README.md); soak checklist |
-| Live tooling | Read-only preflight (BTC/EUR at €8 and €10 feasible at an assumed 0.40 % fee), read-only reconciliation, credential-free `config/live.json`, secrets validation for deployable overlays |
-| Jev | Candidate recording, credential-free worker with a null provider, fail-closed filter, leakage-safe evaluation harness; no real provider ([Jev](jev.md)) |
+| Operations | Health ping to a dead-man's switch; backup of every trade database and the Jev records (plaintext secret staging is removed even when restic fails); restore of a named database that leaves the bot stopped; image pruning; hardened systemd units; [Debian 13 runbook](../ops/README.md); soak checklist |
+| Live tooling | Read-only public preflight plus an account-required live-pilot target; bounded account-wide reconciliation that fails on incomplete history; credential-free `config/live.json`; secrets validation for deployable overlays |
+| Jev | Candidate recording, credential-free worker with a bounded main-loop deadline and null provider, fail-closed filter, leakage-safe evaluation harness; no real provider ([Jev](jev.md)) |
 | Checks | `make ci`: lint, format, shellcheck, Compose variants, three config validations, pytest in the pinned image; the same in GitHub Actions |
 | Demo | [GitHub Pages](https://sebastianspicker.github.io/schrodingers-quant/), built from `pages/` and the recorded H1 equity curves (`make research ARGS=equity-curves`, which refuses to write if a curve disagrees with the record) |
 
@@ -39,8 +39,13 @@
 
 What has actually been run and checked, newest first:
 
-- **`make ci` exits 0 locally** after the research-pipeline restructure
-  ([ADR-0007](adr/0007-research-pipeline-in-python.md)).
+- **Safety review hardening (2026-09-27).** `make ci` exits 0 locally (182
+  tests). A failed-restic stub confirms plaintext `config/local` staging is
+  removed; reconciliation tests cover account-wide offset pagination, the page
+  cap and a missing base balance; live preflight refuses to pass without both
+  authenticated fee and balance reads. A timing regression proves a 50 ms Jev
+  timeout returns in under 200 ms (about 55 ms in the direct pinned-image
+  probe), rather than waiting for the 300–500 ms provider call.
 - **ADR-0007 differential checks (2026-09-25).** A differential check reruns
   a step and compares its output with the tracked record. `make research` with
   `manifest`, `train`, `validation`, `sensitivity`, `eth-robustness`,
@@ -97,6 +102,8 @@ None of the following has been tested yet:
 | Jev live filter | Mechanism done, off | A real provider and a positive matched evaluation |
 | Successor hypotheses (H2…) | Open | Predeclared, judged on forward data after 2026-09-24; the 2024-07 → 2026-09 window is spent |
 | Race-safe publication of frozen experiment artifacts | Open | Needed only if experiment freezing is automated (the records are currently made by hand) |
+| Demo benchmark curve/headline alignment | Open | Preserve the frozen benchmark records, restore the ignored research inputs, and give the benchmark its own dated series; current plotted endpoints use a different window and stress fee |
+| Verify data files against the manifest before research runs | Open | Reject a run if the Feather file hashes no longer match the manifest it records as provenance |
 
 ### Open decisions
 

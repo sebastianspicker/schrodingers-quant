@@ -36,9 +36,11 @@ an order: `sq.live.preflight` and `sq.live.reconcile` are read-only, and
 - The unattended dry-run soak on the VPS has passed
   ([soak checklist](../ops/soak-checklist.md)): control, health, backups and
   recovery drills rehearsed.
-- `make preflight` (`sq.live.preflight`) exits 0 (feasible) for the pair, stake
-  and stoploss actually configured, run against the live account, so it also
-  reads the account's real fee tier and EUR balance, not just market defaults.
+- `make preflight-live ARGS="--pair BTC/EUR --stake 8 --stoploss -0.20"`
+  (`sq.live.preflight --require-account-data`) exits 0 for the pair, stake and
+  stoploss actually configured. This target layers the live config and local
+  secrets and refuses to pass unless it reads the account's real fee tier and
+  EUR balance, not just market defaults.
 - Preflight assumes Kraken's default convention: the entry (buy) fee is charged
   in the base currency, BTC (see `assess_feasibility`'s docstring). Confirm this
   against the first real fill, by checking the fee currency on the filled
@@ -106,8 +108,10 @@ without recording the failures too.
 2. **Restart with an open position.** With a position open, restart the
    container (`docker compose restart freqtrade` or equivalent). Verify that
    Freqtrade reconciles the open trade from the database, and that the stoploss
-   order still exists on Kraken after the restart (check in the Kraken UI or
-   with `make reconcile`).
+   order still exists on Kraken after the restart (check the open order in the
+   Kraken UI). Then run `make reconcile` for filled-order and balance checks;
+   reconciliation reads closed-order history and does not prove that an open
+   stop order still exists.
 3. **Kill during an open entry order.** Send `kill -9` to the Freqtrade process
    (or force-kill the container) while an entry order is unfilled or partially
    filled. Restart, then run `make reconcile` and confirm it reports a match, or
@@ -125,6 +129,8 @@ pilot is active (for example from a VPS cron entry or a systemd timer), and
 immediately after each drill above. It is read-only: it never calls a ccxt
 method that changes orders. It exits 0 on a clean match, 3 on any mismatch,
 and 1 on an error (for example missing credentials or an unreachable exchange).
+It also exits 1 rather than claiming a match if its bounded closed-order query
+reaches the configured pagination limit.
 
 ```sh
 make reconcile   # base + live + config/local/secrets.json, in the tools container
@@ -149,8 +155,8 @@ Stop the pilot (set `force_entry_enable: false` if it is not already, then
 send `/stopentry` or stop the container), and do not resume without the
 maintainer's explicit review, if any of the following occurs:
 
-- `make preflight` or `make reconcile` reports infeasibility or a mismatch that
-  is not immediately understood and resolved.
+- `make preflight-live` or `make reconcile` reports infeasibility or a mismatch
+  that is not immediately understood and resolved.
 - A drill in the checklist above fails (stop order missing after a restart,
   database corruption, errors swallowed silently).
 - Realized losses approach the loss budget for the funded capital, agreed with
@@ -191,6 +197,8 @@ Without credentials, preflight assumes Kraken Pro's base-tier taker fee of
 `fee_source`. The real account fee tier can only be read once a live-scoped key
 exists, and preflight must be re-run against it before the pilot starts. No
 account balance was checked (no credentials): `"eur_balance": null`.
+This public-data command is evidence only; the pilot gate is the authenticated
+`make preflight-live` target above.
 
 <details>
 <summary>Full report, stake €8, stoploss −20 %</summary>
@@ -211,6 +219,7 @@ account balance was checked (no credentials): `"eur_balance": null`.
   "precision_mode": 4,
   "taker_fee": 0.004,
   "fee_source": "conservative base-tier assumption 0.004 (no credentials; ccxt market default 0.0026)",
+  "account_fee_verified": false,
   "eur_balance": null,
   "eur_balance_source": "not read (no credentials)",
   "stoploss_on_exchange_supported": true,
@@ -254,6 +263,7 @@ Exit code: `0`.
   "precision_mode": 4,
   "taker_fee": 0.004,
   "fee_source": "conservative base-tier assumption 0.004 (no credentials; ccxt market default 0.0026)",
+  "account_fee_verified": false,
   "eur_balance": null,
   "eur_balance_source": "not read (no credentials)",
   "stoploss_on_exchange_supported": true,

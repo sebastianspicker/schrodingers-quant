@@ -29,6 +29,7 @@ machine. For a server, use the runbooks:
 | `make ci` | All of the above |
 | `make research ARGS="…"` | `python -m sq.research` subcommands in the `research` service; with no argument it lists them |
 | `make preflight ARGS="--pair BTC/EUR --stake 8 --stoploss -0.20"` | Read-only Kraken feasibility check |
+| `make preflight-live ARGS="--pair BTC/EUR --stake 8 --stoploss -0.20"` | Same check with live layers; requires authenticated fee and balance reads |
 | `make reconcile` | Read-only comparison of the trade database with Kraken; needs secrets |
 | `make backup` | `ops/backup.sh`: every `user_data/runtime/*.sqlite` plus the Jev records |
 | `make retention` | `ops/retention.sh`: prunes dangling images (dry-run unless `ARGS=--apply`) |

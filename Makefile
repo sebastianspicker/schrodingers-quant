@@ -1,4 +1,4 @@
-.PHONY: help check format validate validate-local validate-live validate-vps test ci research preflight reconcile \
+.PHONY: help check format validate validate-local validate-live validate-vps test ci research preflight preflight-live reconcile \
 	backup retention \
 	pull up down logs status
 
@@ -14,6 +14,7 @@ help:
 	  'ci             Run check, validate, validate-live, validate-vps, and test in order' \
 	  'research       Research commands: make research ARGS="train" (see src/sq/research)' \
 	  'preflight      Read-only Kraken feasibility check: make preflight ARGS="--pair BTC/EUR --stake 8 --stoploss -0.20"' \
+	  'preflight-live Account-required check using base + live + local secrets (never places orders)' \
 	  'reconcile      Read-only DB vs Kraken reconciliation (needs config/local/secrets.json)' \
 	  'backup         Consistent SQLite + config backup (ops/backup.sh)' \
 	  'retention      Show the Docker image pruning retention would do; add ARGS=--apply to act' \
@@ -64,6 +65,11 @@ research:
 
 preflight:
 	docker compose run --rm tools python -m sq.live.preflight $(ARGS)
+
+preflight-live:
+	docker compose run --rm tools python -m sq.live.preflight \
+	  --config /freqtrade/config/base.json --config /freqtrade/config/live.json \
+	  --config /freqtrade/config/local/secrets.json --require-account-data $(ARGS)
 
 reconcile:
 	docker compose run --rm tools python -m sq.live.reconcile \

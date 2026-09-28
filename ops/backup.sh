@@ -54,6 +54,19 @@ log() {
     printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1"
 }
 
+staged_secrets_dir=
+cleanup_staged_secrets() {
+    # config/local is copied into the local bundle only long enough for restic
+    # to encrypt it.  An EXIT trap is essential here: `set -e`, a failed
+    # restic command, or an interrupt must not leave that plaintext copy under
+    # the retained backup root.
+    if [ -n "$staged_secrets_dir" ] && [ -d "$staged_secrets_dir" ]; then
+        rm -rf "$staged_secrets_dir"
+        log "removed staged config/local from the local backup"
+    fi
+}
+trap cleanup_staged_secrets 0
+
 fail() {
     log "ERROR: $1"
     exit 1
@@ -126,19 +139,15 @@ done
 IFS=$old_ifs
 rm -rf "$staging_dir"
 
-# Bundle the tracked config. config/local holds secrets, so it is only
-# included when RESTIC_REPOSITORY is set: restic encrypts the bundle before
-# it leaves the host, but an unencrypted local-only backup directory should
-# not duplicate secrets outside config/local's own permissions.
+# Bundle the tracked config. config/local holds secrets and is staged only
+# immediately before an enabled restic push below: an unencrypted local-only
+# backup directory must not duplicate it outside config/local's permissions.
 for entry in "$repo_root"/config/*; do
     name=$(basename "$entry")
     [ "$name" = "local" ] && continue
     cp -R "$entry" "$dest/config/"
 done
-if [ -n "${RESTIC_REPOSITORY:-}" ] && [ -d "$repo_root/config/local" ]; then
-    cp -R "$repo_root/config/local" "$dest/config/local"
-    log "included config/local (restic will encrypt this bundle)"
-else
+if [ -z "${RESTIC_REPOSITORY:-}" ]; then
     log "excluded config/local (no RESTIC_REPOSITORY configured)"
 fi
 
@@ -162,16 +171,16 @@ if [ -n "${RESTIC_REPOSITORY:-}" ]; then
     if ! command -v restic >/dev/null 2>&1; then
         fail "RESTIC_REPOSITORY is set but the restic binary is not installed"
     fi
+    if [ -d "$repo_root/config/local" ]; then
+        staged_secrets_dir="$dest/config/local"
+        cp -R "$repo_root/config/local" "$staged_secrets_dir"
+        log "included config/local (restic will encrypt this bundle)"
+    fi
     log "pushing to restic repository"
     restic backup "$dest" >/dev/null
-    # config/local (secrets) was only staged above so restic could encrypt it
-    # off-host. Once the push has succeeded, remove it from the local,
-    # unencrypted backup dir immediately: it must never persist in cleartext
-    # under $backup_root or be kept by local retention below.
-    if [ -d "$dest/config/local" ]; then
-        rm -rf "$dest/config/local"
-        log "removed staged config/local from the local backup after the restic push"
-    fi
+    # Remove the plaintext staging copy immediately after a successful push;
+    # the EXIT trap performs the same cleanup on every failure path.
+    cleanup_staged_secrets
     log "pruning restic snapshots (--keep-daily 14 --keep-weekly 8)"
     restic forget --keep-daily 14 --keep-weekly 8 --prune >/dev/null
 fi

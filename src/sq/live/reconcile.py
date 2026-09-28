@@ -31,11 +31,14 @@ from sq.config import TRACKED_BASE_CONFIG, load_config
 DEFAULT_AMOUNT_TOLERANCE = 1e-6
 DEFAULT_FEE_TOLERANCE = 1e-6
 DEFAULT_DUST_TOLERANCE = 1e-6
-DEFAULT_PAGE_SIZE = 200
 DEFAULT_MAX_PAGES = 20
 
 
 # --- Pure computation -------------------------------------------------------
+
+
+class IncompleteExchangeHistoryError(RuntimeError):
+    """The bounded exchange-history query may have omitted orders."""
 
 
 @dataclass
@@ -241,19 +244,46 @@ def read_db_orders(db_url: str, pairs: list[str]) -> tuple[list[DbOrder], dict[s
 
 
 def fetch_exchange_orders(
-    client: ccxt.kraken, pair: str, since_ms: int, page_size: int, max_pages: int
+    client: ccxt.kraken, pair: str, since_ms: int, max_pages: int
 ) -> list[ExchangeOrder]:
-    """Fetch closed orders for a pair since a cursor, paginated with a bound."""
+    """Fetch closed orders for a pair since a cursor, paginated with a bound.
+
+    Kraken paginates the account-wide ClosedOrders endpoint with an `ofs`
+    offset.  Fetch account-wide pages first and filter by symbol afterwards:
+    asking ccxt for one symbol can produce an empty filtered page even while
+    later account pages still contain that symbol.  An empty account page is
+    the only completion signal; reaching the configured bound raises instead
+    of returning a prefix that could be reported as a clean reconciliation.
+    """
+    if max_pages <= 0:
+        raise ValueError("max_pages must be positive")
+
     orders: list[dict[str, Any]] = []
-    cursor = since_ms
+    seen_account_order_ids: set[str] = set()
+    offset = 0
     for _ in range(max_pages):
-        page = client.fetch_closed_orders(pair, since=cursor, limit=page_size)
+        page = client.fetch_closed_orders(
+            None,
+            since=since_ms,
+            limit=None,
+            params={"ofs": offset},
+        )
         if not page:
             break
-        orders.extend(page)
-        if len(page) < page_size:
-            break
-        cursor = page[-1]["timestamp"] + 1
+
+        page_ids = {str(order.get("id")) for order in page if order.get("id") is not None}
+        if not page_ids or page_ids & seen_account_order_ids:
+            raise IncompleteExchangeHistoryError(
+                "Kraken closed-order offset pagination did not return a distinct page"
+            )
+        seen_account_order_ids.update(page_ids)
+        orders.extend(order for order in page if order.get("symbol") == pair)
+        offset += len(page)
+    else:
+        raise IncompleteExchangeHistoryError(
+            f"Kraken closed-order history reached the {max_pages}-page safety limit"
+        )
+
     return [
         ExchangeOrder(
             order_id=str(order["id"]),
@@ -270,13 +300,19 @@ def fetch_exchange_orders(
     ]
 
 
-def fetch_base_balance(client: ccxt.kraken, base_currency: str) -> float | None:
+def fetch_base_balance(client: ccxt.kraken, base_currency: str) -> float:
     """Read-only total (free + used) balance of the base currency."""
     balance = client.fetch_balance()
     entry = balance.get(base_currency)
     if entry is None:
-        return None
-    return entry.get("total")
+        # ccxt commonly omits zero-balance currencies from the per-currency
+        # mapping.  Treat omission as zero so an open DB position cannot skip
+        # the balance comparison and incorrectly reconcile cleanly.
+        return 0.0
+    total = entry.get("total") if isinstance(entry, dict) else None
+    if total is None:
+        raise ValueError(f"Exchange balance for {base_currency} had no total")
+    return float(total)
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -295,7 +331,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--since",
         help="ISO 8601 UTC cursor, e.g. 2026-09-23T00:00:00Z. Defaults to 24 hours ago.",
     )
-    parser.add_argument("--page-size", type=int, default=DEFAULT_PAGE_SIZE)
     parser.add_argument("--max-pages", type=int, default=DEFAULT_MAX_PAGES)
     parser.add_argument("--amount-tolerance", type=float, default=DEFAULT_AMOUNT_TOLERANCE)
     parser.add_argument("--fee-tolerance", type=float, default=DEFAULT_FEE_TOLERANCE)
@@ -340,9 +375,7 @@ def main() -> int:
     all_mismatches: list[Mismatch] = []
     for pair in pairs:
         base_currency = pair.split("/")[0]
-        exchange_orders = fetch_exchange_orders(
-            client, pair, since_ms, args.page_size, args.max_pages
-        )
+        exchange_orders = fetch_exchange_orders(client, pair, since_ms, args.max_pages)
         base_balance = fetch_base_balance(client, base_currency)
         pair_db_orders = [order for order in db_orders if order.pair == pair]
         mismatches = reconcile(
