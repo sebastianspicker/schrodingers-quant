@@ -182,6 +182,92 @@ def test_open_exchange_order_is_not_compared_as_filled():
     assert mismatches == []
 
 
+# --- bounded exchange-history and balance reads ----------------------------
+
+
+class PagingClient:
+    def __init__(self, pages):
+        self.pages = iter(pages)
+        self.calls = []
+
+    def fetch_closed_orders(self, symbol, *, since, limit, params):
+        self.calls.append((symbol, since, limit, params))
+        return next(self.pages)
+
+
+def raw_exchange_order(order_id: str, timestamp: int) -> dict:
+    return {
+        "id": order_id,
+        "timestamp": timestamp,
+        "symbol": "BTC/EUR",
+        "side": "buy",
+        "status": "closed",
+        "filled": 0.5,
+        "amount": 0.5,
+        "cost": 50.0,
+        "fee": {"cost": 0.0013, "currency": "BTC"},
+    }
+
+
+def test_fetch_exchange_orders_refuses_a_possibly_truncated_page_limit():
+    client = PagingClient(
+        [
+            [raw_exchange_order("EX-1", 1_000), raw_exchange_order("EX-2", 2_000)],
+            [raw_exchange_order("EX-3", 3_000), raw_exchange_order("EX-4", 4_000)],
+        ]
+    )
+
+    with pytest.raises(reconcile.IncompleteExchangeHistoryError, match="safety limit"):
+        reconcile.fetch_exchange_orders(client, "BTC/EUR", since_ms=0, max_pages=2)
+
+    assert client.calls == [
+        (None, 0, None, {"ofs": 0}),
+        (None, 0, None, {"ofs": 2}),
+    ]
+
+
+def test_fetch_exchange_orders_returns_history_after_a_short_page():
+    client = PagingClient(
+        [
+            [raw_exchange_order("EX-1", 1_000), raw_exchange_order("EX-2", 2_000)],
+            [raw_exchange_order("EX-3", 3_000)],
+            [],
+        ]
+    )
+
+    orders = reconcile.fetch_exchange_orders(client, "BTC/EUR", since_ms=0, max_pages=3)
+
+    assert [order.order_id for order in orders] == ["EX-1", "EX-2", "EX-3"]
+
+
+def test_fetch_exchange_orders_filters_after_account_wide_pagination():
+    eth_order = raw_exchange_order("ETH-1", 1_000)
+    eth_order["symbol"] = "ETH/EUR"
+    client = PagingClient([[eth_order], [raw_exchange_order("BTC-1", 2_000)], []])
+
+    orders = reconcile.fetch_exchange_orders(client, "BTC/EUR", since_ms=0, max_pages=3)
+
+    assert [order.order_id for order in orders] == ["BTC-1"]
+    assert [call[3]["ofs"] for call in client.calls] == [0, 1, 2]
+
+
+def test_missing_base_balance_is_zero_not_an_unknown_skip():
+    class BalanceClient:
+        def fetch_balance(self):
+            return {"EUR": {"total": 10.0}}
+
+    assert reconcile.fetch_base_balance(BalanceClient(), "BTC") == 0.0
+
+
+def test_balance_entry_without_total_is_an_error():
+    class BalanceClient:
+        def fetch_balance(self):
+            return {"BTC": {"free": 0.1}}
+
+    with pytest.raises(ValueError, match="no total"):
+        reconcile.fetch_base_balance(BalanceClient(), "BTC")
+
+
 # --- read_db_orders() against a real Freqtrade-schema fixture DB -----------
 
 

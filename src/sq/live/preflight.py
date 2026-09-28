@@ -42,6 +42,7 @@ class MarketProfile:
     precision_mode: int
     taker_fee: float
     fee_source: str
+    account_fee_verified: bool
     stoploss_on_exchange_supported: bool
     eur_balance: float | None
     eur_balance_source: str
@@ -80,7 +81,11 @@ class FeasibilityReport:
 
 
 def assess_feasibility(
-    market: MarketProfile, stake_eur: float, stoploss: float
+    market: MarketProfile,
+    stake_eur: float,
+    stoploss: float,
+    *,
+    require_account_data: bool = False,
 ) -> FeasibilityReport:
     """Pure feasibility computation for one (pair, stake, stoploss) profile.
 
@@ -90,6 +95,11 @@ def assess_feasibility(
     request or a wallet can actually hold and later sell.
     """
     reasons: list[str] = []
+
+    if require_account_data and not market.account_fee_verified:
+        reasons.append("account fee tier was not verified")
+    if require_account_data and market.eur_balance is None:
+        reasons.append("account quote-currency balance was not read")
 
     entry_amount_requested = stake_eur / market.price
     entry_amount = amount_to_precision(
@@ -192,6 +202,7 @@ def fetch_market_profile(pair: str, config: dict) -> MarketProfile:
         f"conservative base-tier assumption {CONSERVATIVE_TAKER_FEE} (no credentials; "
         f"ccxt market default {market_taker_fee})"
     )
+    account_fee_verified = False
 
     eur_balance: float | None = None
     eur_balance_source = "not read (no credentials)"
@@ -205,6 +216,7 @@ def fetch_market_profile(pair: str, config: dict) -> MarketProfile:
             if pair_taker_fee is not None:
                 taker_fee = pair_taker_fee
                 fee_source = "account fee tier (fetch_trading_fee)"
+                account_fee_verified = True
             else:
                 fee_source = "market default taker fee (fetch_trading_fee had no taker field)"
         except Exception as exc:
@@ -232,6 +244,7 @@ def fetch_market_profile(pair: str, config: dict) -> MarketProfile:
         precision_mode=client.precisionMode,
         taker_fee=taker_fee,
         fee_source=fee_source,
+        account_fee_verified=account_fee_verified,
         stoploss_on_exchange_supported=bool(Kraken._ft_has.get("stoploss_on_exchange", False)),
         eur_balance=eur_balance,
         eur_balance_source=eur_balance_source,
@@ -262,6 +275,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=float,
         help="Stoploss as a negative fraction, e.g. -0.20. Defaults to config['stoploss'] if set.",
     )
+    parser.add_argument(
+        "--require-account-data",
+        action="store_true",
+        help=(
+            "Report infeasible unless authenticated fee-tier and quote-balance reads both "
+            "succeed; required before the live pilot."
+        ),
+    )
     return parser
 
 
@@ -283,7 +304,12 @@ def main() -> int:
         raise ValueError("No --stoploss given and no stoploss in the merged config")
 
     market = fetch_market_profile(pair, config)
-    feasibility = assess_feasibility(market, float(stake_eur), float(stoploss))
+    feasibility = assess_feasibility(
+        market,
+        float(stake_eur),
+        float(stoploss),
+        require_account_data=args.require_account_data,
+    )
 
     report = {
         "pair": pair,
@@ -300,6 +326,7 @@ def main() -> int:
         "precision_mode": market.precision_mode,
         "taker_fee": market.taker_fee,
         "fee_source": market.fee_source,
+        "account_fee_verified": market.account_fee_verified,
         "eur_balance": market.eur_balance,
         "eur_balance_source": market.eur_balance_source,
         "stoploss_on_exchange_supported": market.stoploss_on_exchange_supported,

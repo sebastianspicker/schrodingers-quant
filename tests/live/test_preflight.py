@@ -40,6 +40,7 @@ def make_market(**overrides) -> preflight.MarketProfile:
         precision_mode=DECIMAL_PLACES,
         taker_fee=0.0,
         fee_source="market default taker fee (no credentials)",
+        account_fee_verified=False,
         stoploss_on_exchange_supported=True,
         eur_balance=None,
         eur_balance_source="not read (no credentials)",
@@ -103,3 +104,37 @@ def test_precision_rounds_down_never_up():
 
     assert report.entry_amount_requested == 0.336
     assert report.entry_amount == 0.33
+
+
+def test_live_pilot_check_requires_authenticated_fee_and_balance_reads():
+    market = make_market(taker_fee=0.004)
+
+    report = preflight.assess_feasibility(
+        market,
+        stake_eur=50.0,
+        stoploss=-0.05,
+        require_account_data=True,
+    )
+
+    assert report.feasible is False
+    assert "account fee tier was not verified" in report.reasons
+    assert "account quote-currency balance was not read" in report.reasons
+
+
+def test_live_pilot_check_accepts_verified_account_data():
+    market = make_market(
+        taker_fee=0.004,
+        account_fee_verified=True,
+        eur_balance=50.0,
+        eur_balance_source="account balance (fetch_balance)",
+    )
+
+    report = preflight.assess_feasibility(
+        market,
+        stake_eur=50.0,
+        stoploss=-0.05,
+        require_account_data=True,
+    )
+
+    assert report.feasible is True
+    assert report.reasons == []
