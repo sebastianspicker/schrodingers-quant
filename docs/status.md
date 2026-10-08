@@ -22,14 +22,13 @@
   ([ADR-0006](adr/0006-evidence-standard.md)). The forward test has
   predeclared criteria ([forward test](forward-test.md)). None of this is
   deployed yet.
-- **The record carries a physics-informed assessment.** BTC/EUR 4h returns
-  show no persistence that DFA can detect beyond chance (Hurst exponent inside
-  its shuffle range in every period); a random market with the window's mean
-  drift and volatility clustering matches H1's held-out return in
-  33 % of trials; the forward protocol's false-GO rate is 1.8 % to 4.8 %
-  without drift, but F3 stops 95 % to 98 % of no-drift paths and 87 % of
-  drifted paths before the 30th trade ([ADR-0008](adr/0008-physics-informed-nulls.md),
-  [physics](physics.md)). Whether F3 should be revised is an open decision.
+- **The record carries a physics-informed assessment.** Schema 3 implements
+  all three configured protections and corrects protection boundaries, excludes post-F3 trades from completion, adds a
+  Brownian-bridge check and corrects volatility drag. Fitted-model GO shares
+  are descriptive and model-conditioned. The ledger's incomplete,
+  cross-period inputs leave deflated Sharpe unavailable
+  ([ADR-0008](adr/0008-physics-informed-nulls.md), [physics](physics.md)).
+  Whether F3 should be revised remains a separate decision.
 - **What GO allows.** Forward paper trading and the €10 execution pilot,
   nothing more.
 - **What is built.** VPS operations, live-pilot tooling and the Jev shadow mode
@@ -59,10 +58,12 @@ proxy candles, a verified pure replay of H1, the predeclared null set, the
 forward-protocol calibration, growth and Kelly figures, the research-trials
 ledger and the demo section "Market structure and null models". The desk
 reads its growth block from `physics.json` and stays standard-library only.
-Verified locally: `uv run --locked pytest` (all tests, including the breakout
-reproduction and the physics drift test), ruff, shellcheck, `sh pages/build.sh`,
-and the page's pure renderer under node against the real `physics.json`. Not
-verified: the page in a browser; nothing was deployed.
+Schema 3 verified locally: `make check` (378 tests, Ruff, shellcheck
+and Compose variants), all four pinned-image validation targets including
+pair-lock and MaxDrawdown contracts, the full `make physics` rebuild, and
+`sh pages/build.sh`.
+Playwright checked desktop (1440×1000) and mobile (390×844), period/cost
+controls, the bridge table, unavailable DSR and console health. Nothing was deployed.
 
 ## Workbench revision (2026-10-08)
 

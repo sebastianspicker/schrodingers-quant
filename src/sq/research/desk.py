@@ -379,7 +379,7 @@ def markdown(report: dict) -> str:
             lines.append("Kelly fraction: n/a (fewer than two trades).")
         else:
             lines.append(
-                f"Kelly fraction {kelly['kelly_fraction']:.2f} (no leverage; unconstrained "
+                f"Kelly fraction {kelly['kelly_fraction']:.2f} (no leverage; wider search ≤5: "
                 f"{kelly['kelly_fraction_unconstrained']:.2f}), 95% bootstrap interval "
                 f"{kelly['kelly_ci95']}; {100 * kelly['share_resamples_zero']:.1f}% of "
                 "resamples say do not trade."

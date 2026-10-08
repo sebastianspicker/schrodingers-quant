@@ -248,9 +248,9 @@
     <section id="physics" aria-labelledby="physics-title">
       <h2 id="physics-title">Market structure and null models</h2>
       <p>
-        This section asks what a market without an edge would look like, and how often the record and the
-        forward test would still look like H1. Every random market below is built to share some statistics
-        with the real one and to carry no timing skill. A null model sharpens the test. It cannot create an edge.
+        This section compares H1 with simulated markets preserving selected features of the data.
+        It describes how the recorded result and forward protocol behave under those constructions.
+        A favorable comparison does not establish an edge.
       </p>
       <p class="no-js">
         The tables need JavaScript. The figures are in
@@ -280,8 +280,8 @@
           <p class="note">
             Tail index: about 3 is the inverse-cubic law of equity returns; smaller means heavier tails, and BTC/EUR sits lower.
             Autocorrelation at lag 1 is 4h and at lag 6 is 1 day.
-            Hurst exponent: 0.5 is memoryless. A channel breakout needs persistence above 0.5. The shuffle range is the 95 % range
-            of the same returns in random order.
+            Hurst exponent: near 0.5 is consistent with iid scaling over the fitted scales, but does not exclude drift or nonlinear predictability.
+            The shuffle range describes reordered versions of the same returns.
             Permutation entropy: lower than its shuffle range means more ordinal structure.
             MRW λ² measures how strongly volatility clusters across time scales.
           </p>
@@ -290,7 +290,7 @@
           <h3 id="physics-null-title">Would random markets with the same statistics produce this?</h3>
           <p>
             Each model generated many random price paths. H1 was run on every path with the same rules and costs.
-            The shares below say how often a market without timing skill did at least as well as H1 did on the real one.
+            The shares below say how often each modeled market did at least as well as the recorded H1 result.
             It follows the run chosen under Results.
           </p>
           <p class="note" id="physics-null-status" hidden></p>
@@ -314,21 +314,21 @@
             </div>
             <p class="note">
               Block shuffle: the same returns, order scrambled in blocks (5 days).
-              IAAFT: the same return distribution and linear spectrum, nonlinear structure removed.
+              IAAFT: the same return distribution and approximately the same linear spectrum.
               GBM: a random walk with the window's volatility.
-              GARCH-t: volatility clustering and heavy tails, with no drift or with the window's mean drift.
-              MRW: a multifractal volatility cascade, no drift.
+              GARCH-t: volatility clustering and heavy tails, with zero or historical mean log drift.
+              MRW: a multifractal volatility cascade, zero log drift.
               A fixed stake can lose more than its notional, so synthetic paths show returns below −100 % and drawdowns above 100 %.
-              Paths with stop exits leave the regime the record validates: the StoplossGuard protection is replayed, the MaxDrawdown protection is not.
+              Cooldown, StoplossGuard and MaxDrawdown are replayed. MaxDrawdown uses the cumulative trade-return-ratio drop, not account-equity drawdown; it can also lock after signal exits.
             </p>
             <p class="note" data-p="null-note"></p>
           </div>
 
-          <h3 id="physics-calib-title">How often would the forward test say GO with no edge?</h3>
+          <h3 id="physics-calib-title">How often would the forward test say GO under each model?</h3>
           <p>
-            The forward test was fixed before it started. Here its rules are run on simulated markets without timing skill.
-            Under a model with no drift, the share of GO is the protocol's false-GO rate. Under the model with the historical drift,
-            it is the pass rate in a rising market. This is why a GO cannot be read as proof of an edge.
+            The forward protocol was predeclared. Here its performance gates are evaluated on simulated markets.
+            These are model-conditioned pass rates. Zero log drift does not imply zero expected price return,
+            and these models do not establish a statistical false-positive rate.
           </p>
           <p class="note" data-p="calib-protocol"></p>
           <div class="table-scroll" tabindex="0" role="region" aria-labelledby="physics-calib-title">
@@ -336,9 +336,9 @@
               <thead>
                 <tr>
                   <th scope="col"><span class="visually-hidden">Model</span></th>
-                  <th scope="col" class="num">Reach required trades</th>
-                  <th scope="col" class="num">Years to required trades <span class="range">(median, 5–95 %)</span></th>
-                  <th scope="col" class="num">Trades a year <span class="range">(median, 5–95 %)</span></th>
+                  <th scope="col" class="num">Complete before F3</th>
+                  <th scope="col" class="num">Years among completers <span class="range">(median, 5–95 %)</span></th>
+                  <th scope="col" class="num">Trades a year, ignoring F3 <span class="range">(median, 5–95 %)</span></th>
                   <th scope="col" class="num">Stopped by F3</th>
                   <th scope="col" class="num">Pass P1</th>
                   <th scope="col" class="num">Pass P2</th>
@@ -352,8 +352,8 @@
 
           <h3 id="physics-fp-title">The stop as a first-passage problem</h3>
           <p>
-            A −20 % stop is a barrier. Without drift, the chance of touching it grows with the time held
-            and with volatility, whatever the entry rule.
+            A −20 % stop is a barrier. This constant-volatility, zero-log-drift benchmark
+            compares the continuous analytic and Brownian-bridge estimates with 4h closes. It does not condition on H1 entries or channel exits.
           </p>
           <div class="table-scroll" tabindex="0" role="region" aria-labelledby="physics-fp-title">
             <table class="stat-table">
@@ -361,7 +361,8 @@
                 <tr>
                   <th scope="col">Holding time</th>
                   <th scope="col" class="num">Analytic</th>
-                  <th scope="col" class="num">Simulated</th>
+                  <th scope="col" class="num">4h closes</th>
+                  <th scope="col" class="num">Bridge</th>
                 </tr>
               </thead>
               <tbody id="physics-fp-body"></tbody>
@@ -371,19 +372,19 @@
 
           <h3 id="physics-growth-title">Growth and sizing</h3>
           <p>
-            The mean trade is what a fixed stake earns on average. The time average is what one trader who compounds gets.
-            The gap between them is volatility drag. The figures follow the run chosen under Results.
+            The empirical mean trade and mean log growth use different units. Volatility drag is
+            log(1 + mean return) minus mean log growth; it is zero for constant returns. The figures follow the selected run.
           </p>
           <div class="stats" id="physics-growth">
             <table class="stat-table">
               <caption>Per trade <span data-p="growth-run"></span></caption>
               <tbody>
-                <tr><th scope="row">Ensemble mean per trade</th><td class="num" data-p="g-mean">—</td></tr>
-                <tr><th scope="row">Time-average growth per trade</th><td class="num" data-p="g-time">—</td></tr>
+                <tr><th scope="row">Arithmetic mean per trade</th><td class="num" data-p="g-mean">—</td></tr>
+                <tr><th scope="row">Mean log growth per trade</th><td class="num" data-p="g-time">—</td></tr>
                 <tr><th scope="row">Volatility drag</th><td class="num" data-p="g-drag">—</td></tr>
                 <tr><th scope="row">Kelly fraction, capped at 1</th><td class="num" data-p="g-kelly">—</td></tr>
-                <tr><th scope="row">Kelly fraction, uncapped</th><td class="num" data-p="g-kelly-un">—</td></tr>
-                <tr><th scope="row">Kelly fraction, 95 % interval</th><td class="num" data-p="g-kelly-ci">—</td></tr>
+                <tr><th scope="row">Kelly fraction, wider search (cap 5)</th><td class="num" data-p="g-kelly-un">—</td></tr>
+                <tr><th scope="row">Kelly fraction, IID bootstrap 95 % interval</th><td class="num" data-p="g-kelly-ci">—</td></tr>
                 <tr><th scope="row">Resamples with Kelly fraction at zero</th><td class="num" data-p="g-zero">—</td></tr>
                 <tr><th scope="row">Growth per trade at 25, 50, 75, 100 % of the stake</th><td class="num" data-p="g-fractions">—</td></tr>
               </tbody>
@@ -392,7 +393,7 @@
               <caption>Daily marks</caption>
               <tbody>
                 <tr><th scope="row">Annualised mean</th><td class="num" data-p="d-mean">—</td></tr>
-                <tr><th scope="row">Annualised growth</th><td class="num" data-p="d-growth">—</td></tr>
+                <tr><th scope="row">Annualised log growth</th><td class="num" data-p="d-growth">—</td></tr>
                 <tr><th scope="row">Volatility drag</th><td class="num" data-p="d-drag">—</td></tr>
                 <tr><th scope="row">Years</th><td class="num" data-p="d-years">—</td></tr>
               </tbody>
@@ -400,11 +401,11 @@
             <div class="wide">
               <div class="table-scroll" tabindex="0" role="region" aria-labelledby="physics-frontier-caption">
                 <table class="stat-table">
-                  <caption id="physics-frontier-caption">Fraction of the stake that is compounded</caption>
+                  <caption id="physics-frontier-caption">Synthetic daily P&L compounding fractions</caption>
                   <thead>
                     <tr>
                       <th scope="col">Fraction</th>
-                      <th scope="col" class="num">Annualised growth</th>
+                      <th scope="col" class="num">Annualised log growth</th>
                       <th scope="col" class="num">Max drawdown</th>
                       <th scope="col" class="num">Terminal multiple</th>
                     </tr>
@@ -413,20 +414,21 @@
                 </table>
               </div>
             </div>
+            <p class="note">The frontier synthetically compounds daily fixed-notional P&amp;L. It is not a replay with stakes resized only at trade entries; new fills and rebalancing costs are not modeled.</p>
             <p class="note" data-p="growth-note"></p>
           </div>
 
           <h3 id="physics-ledger-title">How many times was the data looked at?</h3>
           <p>
             Every variant tried on this data is a trial, and the best of many trials looks better than a typical one.
-            The expected maximum Sharpe ratio is what the best of that many unrelated trials would show by chance.
+            A deflated Sharpe adjustment needs comparable trial results. Missing or cross-period inputs leave it unavailable.
           </p>
           <table class="stat-table">
             <tbody>
               <tr><th scope="row">Trials counted</th><td class="num" data-p="l-trials">—</td></tr>
               <tr><th scope="row">Observed Sharpe ratio, annualised</th><td class="num" data-p="l-sharpe">—</td></tr>
               <tr><th scope="row">Expected maximum Sharpe ratio of that many unrelated trials, annualised</th><td class="num" data-p="l-emax">—</td></tr>
-              <tr><th scope="row">Deflated Sharpe probability</th><td class="num" data-p="l-dsr">—</td></tr>
+              <tr><th scope="row">Deflated Sharpe score</th><td class="num" data-p="l-dsr">—</td></tr>
             </tbody>
           </table>
           <ul class="ledger" id="physics-ledger-list" aria-label="Trials in the ledger"></ul>

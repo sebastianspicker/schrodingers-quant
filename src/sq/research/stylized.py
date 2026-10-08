@@ -18,15 +18,13 @@ held-out and the full sample) so a regime change is visible.
   candles). Returns are close to uncorrelated (no linear edge from yesterday's
   move); absolute returns are strongly correlated (volatility clusters).
 - Hurst exponent H by detrended fluctuation analysis (Peng et al. 1994).
-  H = 0.5 is the no-memory value, H > 0.5 means moves tend to continue, H <
-  0.5 that they tend to revert. A channel breakout only earns money from
-  persistence, so it needs H > 0.5 beyond what luck produces: the iid null is
-  the range of H over random shuffles of the same returns (`shuffle_range95`).
-  H of absolute returns measures the long memory of volatility.
-- Permutation entropy (Bandt and Pompe 2002) of the returns, scaled to [0, 1].
-  1 means every up/down ordering of consecutive candles is equally likely, so
-  there is no short-term pattern to exploit; lower values mean structure. The
-  shuffle range gives the value that pure chance produces.
+  H near 0.5 is consistent with iid increments at the fitted scales; it
+  does not rule out drift or nonlinear predictability. Shuffle ranges test
+  this scaling diagnostic, not whether a breakout can earn money.
+  H of absolute returns describes volatility scaling over those scales.
+- Permutation entropy (Bandt and Pompe 2002) of returns, scaled to [0, 1].
+  One means uniform ordinal-pattern frequencies at the chosen order and lag.
+  It does not imply independence or exclude other forms of predictability.
 - Multifractal random walk intermittency lambda^2 (Bacry, Delour, Muzy 2001).
   The covariance of ln|r| at lag tau falls like lambda^2 ln(L / tau); lambda^2
   is how strongly volatility bursts cascade across time scales (0 for iid
@@ -150,8 +148,8 @@ def hurst_report(
     """H of returns and of |returns|, with the iid null range for H of returns.
 
     `shuffle_range95` is the 2.5th and 97.5th percentile of H over random
-    permutations of the same returns. H = 0.5 is the no-memory value; a channel
-    breakout needs persistence, H > 0.5 and above that range.
+    permutations of the same returns. H near 0.5 is consistent with iid
+    scaling over these scales, not a test excluding all predictability.
     """
     r = np.asarray(r, dtype=float)
     scales = _default_scales(len(r))

@@ -132,7 +132,7 @@ def test_ledger_report_with_three_counted_entries_is_finite():
         report["observed_sharpe_daily"] * math.sqrt(365), rel=1e-3
     )
     assert [e["id"] for e in report["entries"]] == ["T0", "T1", "T2"]
-    assert "luck" in report["note"]
+    assert "not a posterior" in report["note"]
 
 
 def test_ledger_report_uncounted_entries_do_not_count():
@@ -154,3 +154,18 @@ def test_ledger_report_single_counted_entry_has_null_variance_fields():
         "deflated_sharpe_probability",
     ):
         assert report[key] is None
+
+
+@pytest.mark.parametrize("mismatch", ["missing", "different_period"])
+def test_incomparable_trials_do_not_produce_a_deflated_sharpe(mismatch):
+    data = sample([1.2, 0.4, 0.9])
+    if mismatch == "missing":
+        data["entries"][1]["sharpe_annualised"] = None
+    else:
+        data["entries"][1]["period"] = "2020-01-01..2023-01-01"
+    report = ledger.ledger_report(data, daily_returns())
+    assert report["selection_adjustment_status"] == "unavailable"
+    assert report["selection_adjustment_reasons"]
+    assert report["sharpe_variance_daily"] is None
+    assert report["deflated_sharpe_probability"] is None
+    assert report["observed_sharpe_daily"] is not None

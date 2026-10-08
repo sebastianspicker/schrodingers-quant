@@ -9,13 +9,14 @@ from sq.research import growth
 from sq.research.statistics import max_drawdown_pct
 
 
-def test_constant_trade_has_time_average_ln_and_positive_drag():
+def test_constant_trade_has_log_growth_but_no_volatility_drag():
     g = growth.trade_growth([10.0] * 5)
     assert g["n"] == 5
     assert g["mean_pct"] == pytest.approx(10.0)
     assert g["time_average_growth_pct"] == pytest.approx(100 * math.log(1.1), abs=1e-4)
-    # No dispersion, but the mean of a simple return still exceeds its log growth.
-    assert g["volatility_drag_pct"] > 0
+    # No dispersion: the arithmetic/log conversion is not volatility drag.
+    assert g["volatility_drag_pct"] == 0
+    assert g["arithmetic_log_gap_pct"] > 0
 
 
 def test_drag_grows_with_dispersion():
@@ -81,7 +82,7 @@ def test_daily_growth_of_flat_series_is_zero():
     assert g["annualised_mean_pct"] == 0
     assert g["annualised_growth_pct"] == 0
     assert g["volatility_drag_pct"] == 0
-    assert g["years"] == pytest.approx(4 / 365, abs=1e-4)
+    assert g["years"] == pytest.approx(3 / 365, abs=1e-4)
 
 
 def test_frontier_compounds_the_fixed_stake_pnl():

@@ -15,15 +15,95 @@ from pathlib import Path
 
 import pandas as pd
 from freqtrade.enums import RunMode
-from freqtrade.persistence import Order, Trade
+from freqtrade.persistence import LocalTrade, Order, PairLocks, Trade
+from freqtrade.plugins.protections.max_drawdown_protection import MaxDrawdown
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from sq.config import TRACKED_BASE_CONFIG, load_config, load_strategy
 from sq.live import forward
+from sq.research import breakout
+
+
+def check_pairlock_boundaries():
+    """Keep pure research replay's unlock boundaries tied to the pinned runtime."""
+    PairLocks.use_db = False
+    PairLocks.timeframe = "4h"
+    closed = pd.Timestamp("2030-01-01", tz="UTC").to_pydatetime()
+    try:
+        for duration in (1, 42):
+            PairLocks.reset_locks()
+            nominal_end = closed + timedelta(hours=4 * duration)
+            PairLocks.lock_pair("BTC/EUR", nominal_end, now=closed, side="long")
+            assert PairLocks.is_pair_locked("BTC/EUR", nominal_end, "long")
+            assert not PairLocks.is_pair_locked("BTC/EUR", nominal_end + timedelta(hours=4), "long")
+    finally:
+        PairLocks.reset_locks()
+        PairLocks.use_db = True
+
+
+def check_max_drawdown_contract():
+    """Compare the replay directly with the pinned protection and pair-lock rounding."""
+    now = pd.Timestamp("2030-06-01", tz="UTC")
+    cases = [
+        ([], []),
+        ([0], [-0.25]),
+        ([0], [-0.2501]),
+        ([1, 0], [10.0, -0.3]),
+        ([2, 1, 0], [-0.15, -0.15, 0.5]),
+        ([540, 0], [-0.2, -0.1]),
+        ([539, 0], [-0.2, -0.1]),
+    ]
+    # Historical train drawdown: three signal losses trigger a lock even
+    # though no entry occurs during that lock and all recorded trades match.
+    cases.append(([525, 378, 0], [-0.08868, -0.12978, -0.15514]))
+    rules = breakout.H1_RULES
+    protection = MaxDrawdown(
+        {"timeframe": "4h"},
+        {
+            "lookback_period_candles": rules.drawdown_lookback,
+            "trade_limit": rules.drawdown_trade_limit,
+            "max_allowed_drawdown": rules.drawdown_limit,
+            "stop_duration_candles": rules.drawdown_duration,
+        },
+    )
+    saved_trades, saved_use_db = LocalTrade.bt_trades, Trade.use_db
+    PairLocks.use_db = False
+    PairLocks.timeframe = "4h"
+    Trade.use_db = False
+    try:
+        for ages, profits in cases:
+            closed = [
+                (now - age * breakout.STEP, profit)
+                for age, profit in zip(ages, profits, strict=True)
+            ]
+            LocalTrade.bt_trades = [
+                LocalTrade(
+                    pair="BTC/EUR",
+                    is_open=False,
+                    close_date=date.to_pydatetime(),
+                    close_profit=profit,
+                    exit_reason="exit_signal",
+                )
+                for date, profit in closed
+            ]
+            expected = protection.global_stop(now.to_pydatetime(), "long", 1000.0)
+            actual = breakout.max_drawdown_lock_end(closed, now)
+            if expected is None:
+                assert actual is None, (ages, profits, actual)
+            else:
+                PairLocks.reset_locks()
+                lock = PairLocks.lock_pair("*", expected.until, now=now.to_pydatetime())
+                assert actual == pd.Timestamp(lock.lock_end_time), (ages, profits, actual, lock)
+    finally:
+        LocalTrade.bt_trades, Trade.use_db = saved_trades, saved_use_db
+        PairLocks.reset_locks()
+        PairLocks.use_db = True
 
 
 def check():
+    check_pairlock_boundaries()
+    check_max_drawdown_contract()
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         db = root / "trades.sqlite"
@@ -134,7 +214,7 @@ def check():
         )
         assert stake == 500.0, stake
         engine.dispose()
-    print("Pinned Freqtrade ORM, filled snapshot, forward CLI and H2 callback: PASS")
+    print("Pinned Freqtrade locks, MaxDrawdown, ORM, forward CLI and H2 callback: PASS")
 
 
 if __name__ == "__main__":

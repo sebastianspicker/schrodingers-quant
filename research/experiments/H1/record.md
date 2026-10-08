@@ -243,28 +243,60 @@ replayed by `sq.research.breakout`, which reproduces every trade in this record
 on the tracked proxy candles (`research/data/`). The null set was fixed before
 the shares were computed.
 
-Held-out period, base costs, 1,000 paths per null:
+Held-out period, base costs, 1,000 paths per null (schema 3):
 
-| Null market | Return ≥ H1's | Drawdown ≤ H1's | Both |
-| --- | --- | --- | --- |
-| Block shuffle of the real candles (5-day blocks) | 9.5 % | 24 % | 7.2 % |
-| IAAFT surrogate (same returns, same spectrum) | 16 % | 35 % | 12 % |
-| Geometric Brownian motion, zero drift | 16 % | 23 % | 12 % |
-| GARCH(1,1)-t, zero drift | 26 % | 11 % | 8.9 % |
-| GARCH(1,1)-t, with the window's mean drift | 33 % | 14 % | 11 % |
-| Multifractal random walk, zero drift | 19 % | 22 % | 13 % |
+| Null market | Return ≥ H1's | Drawdown ≤ H1's | Both | Paths with MaxDrawdown lock |
+| --- | --- | --- | --- | --- |
+| Block shuffle of the real candles | 9.2 % | 24.3 % | 7.2 % | 33.3 % |
+| IAAFT surrogate of the real returns | 16.3 % | 35.5 % | 12.1 % | 23.1 % |
+| Geometric Brownian motion, zero log drift | 16.3 % | 23.3 % | 11.7 % | 34.9 % |
+| GARCH(1,1)-t, zero log drift | 24.9 % | 11.5 % | 8.9 % | 67.1 % |
+| GARCH(1,1)-t, with the window's mean log drift | 32.2 % | 15.2 % | 11.9 % | 65.7 % |
+| Multifractal random walk, zero log drift | 18.6 % | 21.8 % | 13.2 % | 37.9 % |
 
-The Hurst exponent of the held-out returns is 0.531, inside the range that
-random shuffles of the same returns produce (0.447 to 0.554), as in every other
-period: DFA detects no persistence for a breakout to earn from beyond chance
-(permutation entropy shows slight short-range ordinal structure on the train
-period and the full history). The forward protocol's false-GO rate under the
-no-drift nulls is 1.8 % to 4.8 %, but F3 stops 95 % to 98 % of
-those paths before the 30th trade, which takes 4 to 6 years, and 87 % of
-paths with the historical mean drift. The deflated Sharpe probability for
-seven counted trials is 0.74. None of this changes the verdict; the held-out
-window was inspected before these diagnostics existed, so on it they are
-descriptive.
+Forward calibration, 1,000 paths per model:
+
+| Model | Complete before F3 | GO | Years to 30 among completers, median | Paths with MaxDrawdown lock, full horizon |
+| --- | --- | --- | --- | --- |
+| Geometric Brownian motion, zero log drift | 4.7 % | 4.7 % | 4.97 | 99.3 % |
+| GARCH(1,1)-t, zero log drift | 1.9 % | 1.8 % | 5.80 | 98.8 % |
+| GARCH(1,1)-t, with the window's mean log drift | 13.7 % | 12.5 % | 5.61 | 97.8 % |
+| Multifractal random walk, zero log drift | 3.5 % | 3.5 % | 5.35 | 99.0 % |
+
+Schema 3 includes CooldownPeriod, StoplossGuard and default ratios-mode
+MaxDrawdown. The latter locks on an absolute drop greater than 0.25 in the
+cumulative closed-trade return ratios over 540 candles, not on account-equity
+drawdown. The lock lasts until the next candle boundary after the latest
+qualifying close plus 180 candles. Synthetic cases are verified against the
+actual protection in the pinned Freqtrade image.
+
+The training replay triggers one MaxDrawdown lock at 2021-06-20 12:00 UTC,
+expiring 2021-07-20 16:00 UTC. No entry falls in that interval, so every
+historical trade remains unchanged. The former claim that no protection
+fired was incorrect. Lookbacks and unlocks now use elapsed time across gaps.
+
+Completion excludes post-F3 trades. Counterfactual timing ignoring F3 and
+full-horizon MaxDrawdown-lock frequency are reported separately. A path with
+a MaxDrawdown lock can still complete: that protection is a temporary entry
+lock, while F3 is a terminal protocol stop. These are model-conditioned rates,
+not established false-GO rates: zero log drift is not zero expected price
+return, and exponentiated Student-t increments have no finite mean.
+
+At the held-out volatility, the continuous 30-day stop benchmark is 8.89%
+analytically and 8.87% by Brownian bridge (Monte Carlo standard error 0.20
+percentage points); discrete 4h-close monitoring gives 8.03%. This benchmark
+does not condition on H1 entries or competing channel exits.
+
+The mean trade is 2.83%, mean log growth 2.0026%, and Jensen volatility drag
+0.7881 log percentage points. The wider Kelly search is capped at 5. The
+former 0.74 deflated Sharpe score is withdrawn: four counted trials lack
+Sharpes, and the three available Sharpes cover different periods. The ledger
+cannot estimate the required cross-strategy variance on a common sample.
+
+DFA's held-out estimate of 0.531 lies within its shuffle range; this does not
+exclude drift or nonlinear predictability. All historical diagnostics remain
+descriptive because the window was already inspected. No H1 rule, historical
+trade, verdict or forward threshold changes in this review.
 
 ## Glossary
 

@@ -9,8 +9,8 @@ workstation workbench). H1's rules, trades and verdict are unchanged; the record
 - The record gains a third assessment file, `physics.json`, built by
   `make physics` without Docker from a tracked copy of the proxy candles.
   It contains the stylized facts of the market, H1 replayed on surrogate and
-  simulated markets that share those facts but have no edge, the forward
-  protocol's false-GO rate under such markets, a first-passage check of the
+  simulated markets that preserve selected constraints, the forward
+  protocol's model-conditioned GO rates, a first-passage check of the
   stop, growth and Kelly figures, and a ledger of every evaluation of a rule on recorded data with
   the deflated Sharpe ratio. [docs/physics.md](../physics.md) explains the
   physics and its limits.
@@ -20,13 +20,14 @@ workstation workbench). H1's rules, trades and verdict are unchanged; the record
   is that no null was added or removed after the first build.
 - A pure reimplementation of H1's rules (`sq.research.breakout`) is accepted
   as a research tool only because a test shows it reproduces all 41 recorded
-  trades to the candle on the tracked candles. It models the StoplossGuard
-  protection and not the MaxDrawdown protection; neither fired in the record.
+  trades to the candle on the tracked candles. It models CooldownPeriod, StoplossGuard
+  and ratios-mode MaxDrawdown. The training replay triggers one MaxDrawdown
+  lock without changing any historical trade.
   It never runs in the bot.
 - Nothing in this ADR is evidence of an edge or a capital decision. The
   held-out window was inspected before these diagnostics existed; on it they
-  are descriptive. A future forward GO is to be read against the false-GO
-  rates recorded here.
+  are descriptive. A future forward GO can be compared with the model-conditioned
+  rates, subject to the limitations in the mathematical review below.
 
 ## Context
 
@@ -38,17 +39,16 @@ zero and added two nulls that keep the real price path and vary the strategy
    same tails and volatility clustering but no trends produce H1's result as
    often? Is there any persistence in BTC/EUR 4h returns for a breakout to
    earn from?
-2. The forward test's own error rate. ADR-0006 fixed P1 and P2 after 30
-   trades but did not say how often a market with no edge would pass them.
-   A GO from a test with a 40 % false-GO rate means something different from
-   one with 5 %.
-3. A single-trader view of sizing. The fixed-stake record reports an ensemble
-   average; the superseded compounding run showed how different the time
-   average can be.
+2. The forward test's behavior under specified market models. ADR-0006 fixed
+   P1 and P2 after 30 trades but did not simulate their pass rates. These
+   models do not establish the test's statistical false-positive rate.
+3. A multiplicative-growth view of sizing. The fixed-stake record and
+   superseded compounding run illustrate different sizing behavior; empirical
+   trade averages do not by themselves establish long-run averages.
 4. An explicit count of how many times the record was looked at, which the
    deflated Sharpe ratio needs.
 
-The project's name promised physics. Section 3 of
+The diffusion correspondence in
 [physics.md](../physics.md) states the one exact mapping (Fokker–Planck to
 imaginary-time Schrödinger, the stop as an absorbing barrier) and what is
 deliberately not used.
@@ -69,17 +69,18 @@ deliberately not used.
    backtest semantics for H1 (signal on close, fill at next open, exit
    signal before stop in the same candle, stop at stop price or at a gap
    open, force exit at the window end, Freqtrade's fee arithmetic, the
-   StoplossGuard lock after two stop exits in 30 days). The MaxDrawdown
-   protection is not modelled because its semantics depend on the realised
-   profit path and the record never triggered it; every null reports the
-   share of paths with stop exits, where that gap could matter. The replay
+   StoplossGuard lock after two stop exits in 30 days, and default ratios-mode
+   MaxDrawdown). MaxDrawdown is an absolute fall greater than 0.25 in cumulative
+   closed-trade return ratios over 540 candles, with a 180-candle lock. It is
+   tested against the pinned runtime, including signal exits and strict
+   lookback/unlock boundaries; reports expose the frequency of these locks. The replay
    is licensed by that test and by nothing else; a change that breaks the
    test invalidates every null built on it.
 3. **The predeclared null set** (`sq.research.nulls`), on the held-out,
    validation and train windows at base costs, 1,000 trials each:
-   5-day block shuffle; IAAFT surrogate; GBM with zero drift; GARCH(1,1)-t
-   fitted to the window with zero drift and with the window's sample-mean
-   drift; MRW fitted to the window with zero drift. Synthetic paths get wicks
+   5-day block shuffle; IAAFT surrogate; GBM with zero log drift; GARCH(1,1)-t
+   fitted to the window with zero log drift and with the window's sample-mean
+   log drift; MRW fitted to the window with zero log drift. Synthetic paths get wicks
    resampled from the real candles and the same warm-up the real run had.
    The reported figures are the shares of trials with return at least H1's,
    drawdown at most H1's, and both. No further null is added to the record
@@ -89,10 +90,10 @@ deliberately not used.
    closed trade; F3, P1 and P2 as in [forward-test.md](../forward-test.md),
    with buy-and-hold on the forward report's basis. The record carries, per
    model, the share reaching 30 trades, the years to 30 trades, the F3 stop
-   share and the GO share. Under a zero-drift model the GO share is the
-   protocol's false-GO rate; under the drifted model it is the pass rate in a
-   rising market without timing skill. Both are the reference against which
-   a forward GO is read.
+   share and the GO share. Schema 2 excludes paths breaching F3 from
+   completion and eligible P1/P2 shares, and labels unconstrained timing
+   separately. Zero log drift is not zero expected price drift, so these
+   shares are model-conditioned rather than established false-positive rates.
 5. **Stylized facts, first passage, growth, ledger** are recorded as
    diagnostics (`sq.research.stylized`, `nulls.first_passage_check`,
    `sq.research.growth`, `sq.research.ledger`). The desk report gains a
@@ -109,52 +110,48 @@ deliberately not used.
    data is a new hypothesis for forward data only (ADR-0004 spends the
    2024-07 to 2026-09 window for every successor).
 
-## What the first build shows (held-out window, base costs)
+## Mathematical review and implementation correction (2026-10-08)
 
-| Figure | Value |
-| --- | --- |
-| Hurst exponent of returns (DFA) | 0.531; iid shuffle range 0.447 to 0.554 (inside it in every period and on the full history) |
-| Hurst exponent of absolute returns | 0.757 (full history 0.858): strong long memory of volatility |
-| Hill tail index, losses / gains | 2.64 / 2.60 (full history 2.31 / 2.43): heavier than the inverse-cubic law |
-| Excess kurtosis | 7.3 (full history 19.8) |
-| Permutation entropy | 0.9989, shuffle range 0.9988 to 0.9997 (inside); below its range on the train period (0.9986 against 0.9991 to 0.9998) and on the full history (0.9993 against 0.9996 to 0.9999) |
-| MRW intermittency λ² | 0.043 |
-| Share of nulls with return ≥ H1's: block shuffle / IAAFT / GBM / GARCH-t / GARCH-t with the window's mean drift / MRW | 9.5 % / 16 % / 16 % / 26 % / 33 % / 19 % (1,000 paths each) |
-| Share with return ≥ and drawdown ≤ H1's | 7.2 % / 12 % / 12 % / 8.9 % / 11 % / 13 % |
-| Validation window, block shuffle / IAAFT: share with return ≥ H1's | 55 % / 47 % |
-| Forward calibration, years to 30 trades (median, 5–95 %) | 4.5 to 5.3 years (3.8 to 6.4) |
-| Forward calibration, share stopped by F3 before 30 trades | 95 % GBM, 98 % GARCH-t, 97 % MRW (no drift); 87 % GARCH-t with the historical mean drift (1,000 ten-year paths each) |
-| Forward calibration, share GO | 4.8 % GBM, 1.8 % GARCH-t, 3.2 % MRW (false-GO rates); 12 % GARCH-t with the historical mean drift (pass rate in a rising market without timing skill) |
-| Stop hit within 30 days at the window's volatility, analytic / simulated | 8.9 % / 8.0 % |
-| Time-average growth per trade, ensemble mean | +2.00 % against +2.83 % (drag 0.83 points) |
-| Kelly fraction, capped at 1 | 1.0 (uncapped 2.4); 95 % interval 0.0 to 1.0; 24 % of resamples say do not trade |
-| Trials counted, deflated Sharpe probability | 7 trials; expected maximum Sharpe 0.37 annualised; probability 0.74 that H1's 0.78 exceeds it (variance basis: the three counted trials with a recorded Sharpe) |
+The initial implementation is preserved in commit `18fde51`. Schemas 2–3 correct
+its interpretation and replay without adding models, tuning H1, or changing
+any forward threshold. The corrections are verified against the pinned
+runtime and all three recorded periods.
 
-Reading: BTC/EUR 4h returns show no persistence that DFA can detect beyond
-what shuffled returns produce, in any period; permutation entropy sits below
-its shuffle range on the train period and on the full history, which is slight
-short-range ordinal structure, not a trend. What the returns show clearly is
-heavy tails and long-memory volatility. H1's held-out return is matched by 9.5
-% of block-shuffled markets and by 16 % of random walks, but a market with the
-window's own mean drift and volatility clustering matches its return in 33 %
-of trials (return and drawdown together: 11 %); on the validation window the
-window's own returns in any order match it more often than not. The forward
-protocol's false-GO rate is low (1.8 % to 4.8 % under the no-drift nulls)
-because F3 stops almost every path first: with a fixed stake and about six
-trades a year, a 31.31 % drawdown from the peak is nearly certain within the
-four to six years that 30 trades take (95 % to 98 % of no-drift paths), and
-still likely in a market with the historical mean drift (87 %), where only 12
-% of paths reach GO. The protocol as predeclared is therefore mostly a
-drawdown test. No market with an edge was simulated, so its power is not
-measured; the contrast between 12 % with drift and 1.8 % to 4.8 % without is
-weak discrimination. Changing F3 is a decision for a new ADR, not for this
-one; the figure is recorded so that decision can be made with it. The deflated
-Sharpe probability of 0.74 says the held-out Sharpe is not distinguishable
-from the best of seven lucky trials, on a variance basis of three recorded
-Sharpe ratios. Two caveats: the GARCH fits on the longer windows reach the
-persistence cap (near-integrated variance), and GARCH and train-window paths
-stop out often (38 % of held-out GARCH-t paths), where the unmodelled
-MaxDrawdown protection could have altered trading.
+- Cooldown and StoplossGuard unlock times now include Freqtrade's rounding to
+  the next candle boundary. The guard excludes stops exactly at its lookback
+  boundary. Historical trades still reproduce; dedicated synthetic tests
+  cover behavior the historical record never exercised. See the pinned
+  [PairLocks implementation](https://raw.githubusercontent.com/freqtrade/freqtrade/2026.8/freqtrade/persistence/pairlock_middleware.py)
+  and [trade filtering](https://raw.githubusercontent.com/freqtrade/freqtrade/2026.8/freqtrade/persistence/trade_model.py).
+- Schema 3 implements the previously omitted MaxDrawdown protection and
+  checks it directly against Freqtrade's actual protection in the pinned
+  image. It also uses elapsed-time lock and lookback boundaries across gaps.
+  The train replay produces one lock following the 2021-06-20 signal exit;
+  no historical entry falls inside that lock, so the recorded trades remain
+  unchanged. The initial claim that no protection fired was incorrect. The
+  frozen H1 rules and thresholds are not modified by these replay corrections.
+- Completion and time-to-30 no longer count trades after F3. Separate fields
+  retain counterfactual timing ignoring stopping; conditional completion times
+  must not be read as an unconditional forecast.
+- Zero-log-drift models are labeled correctly. Exponentiated Student-t log
+  returns lack finite means; these models provide finite-path scenarios,
+  not a proven financial no-edge null or a measured false-positive rate.
+- The first-passage report adds a continuous Brownian-bridge estimator and
+  Monte Carlo standard errors; the earlier 4h-close estimator is retained
+  with its discrete-monitoring label.
+- Volatility drag is the Jensen gap in log units. The wider Kelly search is
+  explicitly capped at 5; the daily P&L frontier is a synthetic rescaling.
+- The ledger cannot estimate a defensible selection adjustment from three
+  different-period Sharpes and four missing ones. The former 0.74 deflated
+  Sharpe score is withdrawn and the fields are unavailable with reasons.
+- Hurst, entropy, IAAFT and the quantum correspondence now carry their actual
+  mathematical limits. No maximum-entropy derivation is claimed for the set.
+
+The current figures are generated in [physics.json](../../research/experiments/H1/physics.json)
+and summarized in the [record](../../research/experiments/H1/record.md).
+F3 stops most fitted-model paths, but that alone does not measure power or
+justify relaxing F3. Such a change remains a separate protocol decision.
+The complete derivation and linked sources are in [physics.md](../physics.md).
 
 ## Consequences
 
@@ -164,9 +161,9 @@ MaxDrawdown protection could have altered trading.
   and null models".
 - The record (`record.md`) gains a "Physics-informed assessment" section
   that points here; `docs/status.md` reflects this ADR.
-- Not verified in the session that produced this ADR: the demo page was
-  built and its pure rendering function checked under node, but not opened in
-  a browser.
+- The schema 3 verification includes 378 unit tests, pinned-runtime protection
+  contracts, the full diagnostic rebuild and desktop/mobile browser checks.
+  No trading deployment is part of this assessment.
 
 ## Glossary
 
@@ -176,7 +173,7 @@ MaxDrawdown protection could have altered trading.
 | IAAFT | Iterative amplitude-adjusted Fourier transform: a surrogate with the exact same values and nearly the same power spectrum. |
 | GARCH(1,1)-t | A model in which today's variance depends on yesterday's squared return and variance, with Student-t shocks. |
 | MRW | Multifractal random walk: returns scaled by a log-normal volatility cascade whose correlations decay logarithmically. |
-| Hurst exponent | A measure of persistence of a path: 0.5 memoryless, above 0.5 trending, below 0.5 reverting. |
-| False-GO rate | The share of simulated no-edge markets in which the forward protocol would issue GO. |
-| Deflated Sharpe ratio | The probability that an observed Sharpe ratio exceeds what the best of N unrelated trials shows by luck. |
+| DFA exponent | A finite-scale scaling diagnostic; near 0.5 does not rule out drift or nonlinear predictability. |
+| Model-conditioned GO rate | The share of paths passing under a specified construction; not an established false-positive rate. |
+| Deflated Sharpe score | An asymptotic selection-adjusted score requiring comparable trial Sharpes and an independent-trial assumption; unavailable for the current ledger. |
 | Time-average growth | The mean of ln(1 + r) per trade: what a single compounding account experiences. |

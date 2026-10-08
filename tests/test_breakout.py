@@ -78,6 +78,7 @@ def test_simulator_reproduces_recorded_run(candles, record, key):
     assert summary["net_return_pct"] == pytest.approx(run["net_return_pct"], abs=0.02)
     assert summary["mtm_max_drawdown_pct"] == pytest.approx(run["mtm_max_drawdown_pct"], abs=0.02)
     assert summary["stop_exits"] == 0
+    assert summary["max_drawdown_locks"] == (1 if key.startswith("train-") else 0)
 
 
 def _synthetic(closes: np.ndarray, start="2024-01-01") -> pd.DataFrame:
@@ -198,12 +199,12 @@ def test_stoploss_guard_locks_entries_after_two_stops():
         closes[at + 60 :] = 100.0
     frame = _synthetic(closes)
     start, end = frame["date"].iloc[121], frame["date"].iloc[-1] + pd.Timedelta("4h")
-    guarded = breakout.simulate(frame, start, end, fee=0.0)
+    guarded = breakout.simulate(frame, start, end, fee=0.0, rules=breakout.Rules(drawdown_limit=99))
     assert list(guarded["exit_reason"][:2]) == ["stop_loss", "stop_loss"]
-    # The second stop closes at row 310; the guard locks until row 352, so the
+    # The second stop closes at row 310; the guard locks until row 353, so the
     # breakout at row 400 (fill at 401) is still taken, but one at row 330 is not.
     unguarded = breakout.simulate(
-        frame, start, end, fee=0.0, rules=breakout.Rules(stop_guard_limit=99)
+        frame, start, end, fee=0.0, rules=breakout.Rules(stop_guard_limit=99, drawdown_limit=99)
     )
     assert len(guarded) == len(unguarded) == 3
 
@@ -213,10 +214,135 @@ def test_stoploss_guard_locks_entries_after_two_stops():
     closes2[340] = 70.0
     closes2[341:400] = 70.0
     frame2 = _synthetic(closes2)
-    guarded2 = breakout.simulate(frame2, start, end, fee=0.0)
+    guarded2 = breakout.simulate(
+        frame2, start, end, fee=0.0, rules=breakout.Rules(drawdown_limit=99)
+    )
     unguarded2 = breakout.simulate(
-        frame2, start, end, fee=0.0, rules=breakout.Rules(stop_guard_limit=99)
+        frame2, start, end, fee=0.0, rules=breakout.Rules(stop_guard_limit=99, drawdown_limit=99)
     )
     assert len(unguarded2) == len(guarded2) + 1
     assert guarded2.iloc[1]["close_date"] == frame2["date"].iloc[310]
     assert guarded2.iloc[2]["open_date"] == frame2["date"].iloc[401]
+
+
+def test_cooldown_blocks_the_candle_after_a_stop():
+    closes = np.full(400, 100.0)
+    closes[200] = 110.0
+    closes[201:] = 120.0
+    frame = _synthetic(closes)
+    frame.loc[201, "low"] = 70.0
+    trades = breakout.simulate(frame, frame.date.iloc[121], frame.date.iloc[-1] + breakout.STEP, 0)
+    assert len(trades) == 1
+    assert trades.iloc[0].exit_reason == "stop_loss"
+
+
+@pytest.mark.parametrize(("signal_row", "taken"), [(351, False), (352, True)])
+def test_stop_guard_rounds_aligned_lock_end_to_next_candle(signal_row, taken):
+    closes = np.full(600, 100.0)
+    for at, level in ((200, 110.0), (300, 120.0)):
+        closes[at : at + 10] = level
+        closes[at + 10 : at + 60] = 70.0
+    closes[signal_row:] = 130.0
+    frame = _synthetic(closes)
+    trades = breakout.simulate(
+        frame,
+        frame.date.iloc[121],
+        frame.date.iloc[-1] + breakout.STEP,
+        0,
+        rules=breakout.Rules(drawdown_limit=99),
+    )
+    assert list(trades.close_date.iloc[:2]) == list(frame.date.iloc[[210, 310]])
+    assert len(trades) == 2 + taken
+
+
+def test_stop_guard_lookback_excludes_exact_lower_boundary():
+    closes = np.full(650, 100.0)
+    for at, level in ((200, 110.0), (380, 120.0)):
+        closes[at : at + 10] = level
+        closes[at + 10 : at + 60] = 70.0
+    closes[410:] = 130.0
+    frame = _synthetic(closes)
+    trades = breakout.simulate(
+        frame,
+        frame.date.iloc[121],
+        frame.date.iloc[-1] + breakout.STEP,
+        0,
+        rules=breakout.Rules(drawdown_limit=99),
+    )
+    assert len(trades) == 3
+    assert trades.iloc[-1].open_date == frame.date.iloc[411]
+
+
+@pytest.mark.parametrize(
+    ("profits", "expected"),
+    [
+        ([], False),
+        ([-0.25], False),
+        ([-0.2501], True),
+        ([10.0, -0.3], True),
+        ([-0.15, -0.15, 0.5], True),
+        ([0.3, -0.1, 0.4], False),
+    ],
+)
+def test_max_drawdown_uses_absolute_cumulative_ratio_drop(profits, expected):
+    dates = pd.date_range("2030-01-01", periods=max(1, len(profits)), freq="4h", tz="UTC")
+    closed = list(zip(dates, profits, strict=False))
+    end = breakout.max_drawdown_lock_end(closed, dates[-1])
+    assert (end is not None) == expected
+    if expected:
+        assert end == dates[-1] + 181 * breakout.STEP
+
+
+@pytest.mark.parametrize(("age", "locks"), [(540, False), (539, True)])
+def test_max_drawdown_strict_lookback(age, locks):
+    now = pd.Timestamp("2030-06-01", tz="UTC")
+    closed = [(now - age * breakout.STEP, -0.2), (now, -0.1)]
+    assert (breakout.max_drawdown_lock_end(closed, now) is not None) == locks
+
+
+@pytest.mark.parametrize(("signal_row", "taken"), [(30, False), (31, True)])
+def test_drawdown_lock_after_signal_losses_and_unlock_boundary(signal_row, taken):
+    closes = np.full(45, 100.0)
+    closes[10:15] = 110.0
+    closes[15:20] = 99.0
+    closes[20:25] = 120.0
+    closes[25:signal_row] = 96.0
+    closes[signal_row:] = 130.0
+    frame = _synthetic(closes)
+    rules = breakout.Rules(entry_channel=3, exit_channel=2, stoploss=-0.9, drawdown_duration=5)
+    trades = breakout.simulate(
+        frame, frame.date.iloc[5], frame.date.iloc[-1] + breakout.STEP, 0, rules
+    )
+    assert list(trades.exit_reason[:2]) == ["exit_signal", "exit_signal"]
+    assert list(trades.close_date[:2]) == list(frame.date.iloc[[16, 26]])
+    assert trades.attrs["max_drawdown_locks"] == 1
+    assert len(trades) == 2 + taken
+    if taken:
+        assert trades.iloc[-1].open_date == frame.date.iloc[32]
+
+
+def test_cooldown_expires_by_time_even_with_a_missing_candle():
+    closes = np.full(400, 100.0)
+    closes[200] = 110.0
+    closes[201:] = 120.0
+    frame = _synthetic(closes)
+    frame.loc[201, "low"] = 70.0
+    expected_open = frame.date.iloc[203]
+    frame = frame.drop(index=202).reset_index(drop=True)
+    trades = breakout.simulate(frame, frame.date.iloc[121], frame.date.iloc[-1] + breakout.STEP, 0)
+    assert len(trades) == 2
+    assert trades.iloc[-1].open_date == expected_open
+
+
+def test_max_drawdown_lock_outlasts_stop_guard():
+    closes = np.full(650, 100.0)
+    for at, level in ((200, 110.0), (300, 120.0), (400, 130.0)):
+        closes[at : at + 10] = level
+        closes[at + 10 : at + 60] = 70.0
+    closes[500:] = 140.0
+    frame = _synthetic(closes)
+    trades = breakout.simulate(frame, frame.date.iloc[121], frame.date.iloc[-1] + breakout.STEP, 0)
+    # The second stop triggers both protections. The 180-candle MaxDrawdown
+    # lock lasts until row 491, after the 42-candle StoplossGuard has expired.
+    assert list(trades.open_date) == list(frame.date.iloc[[201, 301, 501]])
+    assert trades.attrs["max_drawdown_locks"] == 1

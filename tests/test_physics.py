@@ -58,7 +58,8 @@ def test_cheap_sections_not_drifted(recorded, inputs):
         assert fresh[section] == recorded[section], section
 
 
-def test_null_model_prefixes_not_drifted(recorded, inputs):
+@pytest.mark.parametrize("run_key", physics.NULL_RUNS)
+def test_null_model_prefixes_not_drifted(recorded, inputs, run_key):
     prefix = recorded["prefix_trials"]
     fresh = physics.build_physics(
         inputs["curves"],
@@ -68,17 +69,16 @@ def test_null_model_prefixes_not_drifted(recorded, inputs):
         curves_sha256=inputs["curves_sha256"],
         sections=("nulls",),
         null_trials=prefix,
-        null_runs=("heldout-base",),
+        null_runs=(run_key,),
     )
-    fresh_models = fresh["null_models"]["heldout-base"]["models"]
-    recorded_models = recorded["null_models"]["heldout-base"]["models"]
+    fresh_models = fresh["null_models"][run_key]["models"]
+    recorded_models = recorded["null_models"][run_key]["models"]
     assert list(fresh_models) == list(recorded_models)
     for key, model in recorded_models.items():
         assert fresh_models[key]["prefix_sha256"] == model["prefix_sha256"], key
         assert fresh_models[key].get("fit") == model.get("fit"), key
     assert (
-        recorded["null_models"]["heldout-base"]["observed"]
-        == (fresh["null_models"]["heldout-base"]["observed"])
+        recorded["null_models"][run_key]["observed"] == (fresh["null_models"][run_key]["observed"])
     )
 
 
@@ -111,10 +111,16 @@ def test_calibration_prefixes_not_drifted(recorded, inputs):
 def test_shares_are_fractions(recorded):
     for run in recorded["null_models"].values():
         for model in run["models"].values():
-            for key in ("share_return_ge", "share_drawdown_le", "share_both"):
+            for key in (
+                "share_return_ge",
+                "share_drawdown_le",
+                "share_both",
+                "share_paths_with_max_drawdown_lock",
+            ):
                 assert 0 <= model[key] <= 1
             assert model["share_both"] <= min(model["share_return_ge"], model["share_drawdown_le"])
     for model in recorded["forward_calibration"]["models"].values():
+        assert 0 <= model["share_paths_with_max_drawdown_lock"] <= 1
         assert 0 <= model["share_go"] <= model["share_reached_required_trades"] <= 1
     assert set(recorded["null_models"]) == set(physics.NULL_RUNS)
     assert set(recorded["forward_calibration"]["models"]) == set(nulls.MODELS)

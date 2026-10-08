@@ -24,18 +24,16 @@ Semantics replicated from Freqtrade backtesting (fixed stake, one position):
   force-exited at the last candle's close, with the close date one step later.
 - Return per trade is Freqtrade's `profit_ratio`:
   close_rate (1 − fee) / (open_rate (1 + fee)) − 1, on a fixed stake.
-- Protections. The cooldown of one candle only blocks an entry at the exit's
-  own candle, which the rules make impossible anyway. StoplossGuard is
-  modelled: when a stop exit closes and at least `stop_guard_limit` stop
-  exits closed within the previous `stop_guard_lookback` candles, no entry is
-  taken while the candle date is before that close plus
-  `stop_guard_duration` candles (Freqtrade evaluates the guard when the trade
-  closes and locks until `close_date + stop_duration`). MaxDrawdown (25 % of
-  the realised-profit peak over 540 candles, 180-candle lock) is not
-  modelled: its Freqtrade semantics depend on the cumulative realised profit
-  path and could not be validated against the record, which never triggered
-  any protection (no stop exits in 41 trades). The simulator records stop
-  exits so a caller can see where that gap could matter.
+- Protections. CooldownPeriod, StoplossGuard and MaxDrawdown follow the pinned
+  Freqtrade 2026.8 backtester. Locks round to the next 4h boundary even when
+  the nominal end is aligned. Lookbacks use strict close-date cutoffs and
+  elapsed time, so missing candles do not extend protection durations.
+  MaxDrawdown uses the default ratios mode: the largest absolute fall in
+  cumulative closed-trade profit ratios over 540 candles, including an
+  initial zero peak. A fall strictly above 0.25 locks for 180 candles; this
+  is not a percentage decline in account equity. All closed exit types
+  qualify, including signal exits. Synthetic and pinned-runtime contract
+  tests cover protection boundaries not established by historical reproduction.
 
 Nothing here reads files; `proxy_data.load_candles` provides candles.
 """
@@ -61,9 +59,38 @@ class Rules:
     stop_guard_lookback: int = 180
     stop_guard_limit: int = 2
     stop_guard_duration: int = 42
+    # MaxDrawdown uses Freqtrade's default "ratios" mode, not account drawdown.
+    drawdown_lookback: int = 540
+    drawdown_trade_limit: int = 1
+    drawdown_limit: float = 0.25
+    drawdown_duration: int = 180
 
 
 H1_RULES = Rules()
+
+
+def max_drawdown_lock_end(
+    closed: list[tuple[pd.Timestamp, float]], now: pd.Timestamp, rules: Rules = H1_RULES
+) -> pd.Timestamp | None:
+    """Rounded MaxDrawdown unlock for chronologically ordered closed trades.
+
+    Freqtrade 2026.8 defaults to ratios mode: the greatest absolute fall in
+    cumulative profit ratios, with an initial zero peak. It neither compounds
+    returns nor divides by the peak. Only close dates strictly inside the
+    lookback qualify. The lock is based on the latest qualifying close.
+    """
+    cutoff = now - rules.drawdown_lookback * STEP
+    recent = [(date, profit) for date, profit in closed if cutoff < date <= now]
+    if len(recent) < rules.drawdown_trade_limit:
+        return None
+    cumulative = peak = drawdown = 0.0
+    for _, profit in recent:
+        cumulative += profit
+        peak = max(peak, cumulative)
+        drawdown = max(drawdown, peak - cumulative)
+    if recent and drawdown > rules.drawdown_limit:
+        return (recent[-1][0] + rules.drawdown_duration * STEP).floor(STEP) + STEP
+    return None
 
 
 def signals(high: np.ndarray, low: np.ndarray, close: np.ndarray, rules: Rules) -> tuple:
@@ -93,7 +120,7 @@ def simulate(
     `profit_ratio`, `profit_abs`, `exit_reason`, `amount`, `fee_open`,
     `fee_close` (the columns `metrics.equity_curve` consumes).
     """
-    dates = candles["date"].to_numpy()
+    dates = pd.DatetimeIndex(candles["date"])
     o = candles["open"].to_numpy(dtype=float)
     h = candles["high"].to_numpy(dtype=float)
     lo = candles["low"].to_numpy(dtype=float)
@@ -107,7 +134,9 @@ def simulate(
         return _frame(rows)
     w0, w1 = int(idx[0]), int(idx[-1])
     cursor = w0 + 1  # the first actionable signal is the window's first candle
-    stop_closes: list[int] = []  # row index of every stop exit, for StoplossGuard
+    stop_closes: list[pd.Timestamp] = []
+    closed: list[tuple[pd.Timestamp, float]] = []
+    drawdown_locks = 0
     while cursor <= w1:
         hits = np.flatnonzero(enter[cursor - 1 : w1])
         if len(hits) == 0:
@@ -149,13 +178,33 @@ def simulate(
                 "exit_reason": reason,
             }
         )
-        cursor = j + 1
+        # PairLocks rounds the lock end to the NEXT candle boundary, including
+        # already aligned dates. A one-candle cooldown therefore blocks j+1.
+        # Freqtrade 2026.8 backtesting checks locks at the candle OPEN timestamp.
+        unlock = (close_date + STEP).floor(STEP) + STEP
         if reason == "stop_loss":
-            stop_closes.append(j)
-            recent = [k for k in stop_closes if k >= j - rules.stop_guard_lookback]
-            if len(recent) >= rules.stop_guard_limit:
-                cursor = max(cursor, j + rules.stop_guard_duration)
-    return _frame(rows)
+            stop_closes.append(close_date)
+            stop_closes = [
+                date for date in stop_closes if date > close_date - rules.stop_guard_lookback * STEP
+            ]
+            if len(stop_closes) >= rules.stop_guard_limit:
+                unlock = max(
+                    unlock, (close_date + rules.stop_guard_duration * STEP).floor(STEP) + STEP
+                )
+        if reason != "force_exit":
+            closed.append((close_date, rows[-1]["profit_ratio"]))
+            closed = [
+                item for item in closed if item[0] > close_date - rules.drawdown_lookback * STEP
+            ]
+            drawdown_end = max_drawdown_lock_end(closed, close_date, rules)
+            if drawdown_end is not None:
+                drawdown_locks += 1
+                unlock = max(unlock, drawdown_end)
+        # Use elapsed time, not row offsets: missing candles do not extend locks.
+        cursor = max(j + 1, int(dates.searchsorted(unlock)))
+    frame = _frame(rows)
+    frame.attrs["max_drawdown_locks"] = drawdown_locks
+    return frame
 
 
 def _frame(rows: list[dict]) -> pd.DataFrame:
@@ -208,6 +257,7 @@ def summary(
         "mtm_max_drawdown_pct": max_drawdown_pct(curve, initial=notional),
         "trades": int(len(trades)),
         "stop_exits": int((trades["exit_reason"] == "stop_loss").sum()),
+        "max_drawdown_locks": int(trades.attrs.get("max_drawdown_locks", 0)),
     }
 
 

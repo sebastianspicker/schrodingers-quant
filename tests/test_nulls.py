@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from sq.research import h1, nulls, proxy_data
+from sq.research import breakout, h1, nulls, proxy_data
 
 HELDOUT = (pd.Timestamp(h1.HELDOUT_START, tz="UTC"), pd.Timestamp(h1.HELDOUT_END, tz="UTC"))
 
@@ -151,6 +151,7 @@ def test_null_comparison_complete_and_deterministic(candles):
         "drawdown_pct",
         "trades",
         "share_paths_with_stop_exit",
+        "share_paths_with_max_drawdown_lock",
         "fit",
     }
     for model in first["models"].values():
@@ -203,6 +204,7 @@ def test_forward_calibration_end_to_end(candles):
             "share_p2_pass",
             "share_go",
             "share_paths_with_stop_exit",
+            "share_paths_with_max_drawdown_lock",
         ):
             assert 0 <= model[share] <= 1
         assert model["share_go"] <= model["share_reached_required_trades"]
@@ -212,3 +214,46 @@ def test_forward_calibration_end_to_end(candles):
     )
     for key in result["models"]:
         assert result["models"][key]["prefix_sha256"] == longer["models"][key]["prefix_sha256"]
+
+
+def test_bridge_stop_check_matches_continuous_probability():
+    result = nulls.first_passage_check(0.6, trials=15000, seed=17)
+    for day, analytic in result["analytic"].items():
+        bridge = result["bridge_continuous"][day]
+        assert bridge >= result["simulated"][day]
+        assert abs(bridge - analytic) < 5 * result["bridge_standard_error"][day] + 0.0002
+
+
+def test_calibration_cannot_complete_after_f3(monkeypatch):
+    # A recovery and later completed trade must not clear an earlier STOP.
+    start = pd.Timestamp("2030-01-01", tz="UTC")
+    frame = pd.DataFrame(
+        {
+            "date": pd.date_range(start, periods=4, freq="4h"),
+            "open": [100.0] * 4,
+            "close": [100.0, 60.0, 80.0, 110.0],
+        }
+    )
+    trades = pd.DataFrame({"exit_reason": ["exit_signal"], "close_date": [frame.date.iloc[-1]]})
+    monkeypatch.setattr(nulls, "candles_from_returns", lambda *args: frame)
+    monkeypatch.setattr(breakout, "simulate", lambda *args: trades)
+    monkeypatch.setattr(
+        breakout,
+        "equity",
+        lambda *args: pd.Series([1000.0, 600.0, 800.0, 1100.0], index=frame.date),
+    )
+    result = nulls.forward_calibration(
+        np.array([-0.01, 0.01]),
+        np.zeros((1, 2)),
+        trials=1,
+        seed=1,
+        trades_required=1,
+        max_years=1,
+        models=("gbm_zero_drift",),
+    )
+    model = result["models"]["gbm_zero_drift"]
+    assert model["share_reached_ignoring_f3"] == 1
+    assert model["share_f3_stop"] == 1
+    assert model["share_reached_required_trades"] == model["share_go"] == 0
+    assert model["share_p1_pass"] == model["share_p2_pass"] == 0
+    assert model["years_to_required_trades"]["p50"] is None

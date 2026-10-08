@@ -134,7 +134,7 @@ The page also works on a phone and follows your system's dark mode.
 - **Physics-informed nulls and a calibrated test.** The market's stylized
   facts (tail index, Hurst exponent, permutation entropy, multifractal
   intermittency), H1 replayed on surrogate and simulated markets that keep
-  those facts but have no edge, the forward protocol's own false-GO rate under
+  selected features of those facts, the forward protocol's model-conditioned GO rates under
   such markets, the stop as a first-passage problem, time-average growth and
   Kelly sizing, and a ledger of every evaluation of a rule on recorded data with
   the deflated Sharpe ratio. Rebuilt by `make physics` without Docker and shown on the demo

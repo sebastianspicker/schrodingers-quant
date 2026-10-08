@@ -484,16 +484,16 @@ function physicsText(p, period, runKey) {
       go: shr(at(m, "share_go")),
     })),
   };
-  calib.note = !at(p, "forward_calibration") ? missing("forward_calibration") : calib.rows.length ? "" : missing("forward_calibration.models");
+  calib.note = !at(p, "forward_calibration") ? missing("forward_calibration") : calib.rows.length ? "Completion and P1/P2 shares exclude F3-stopped paths. Years are conditional on completion; trades/year ignores stopping. All shares use all simulated paths." : missing("forward_calibration.models");
 
   const fp = at(p, "first_passage");
   const days = [...new Set([...Object.keys(at(fp, "analytic") ?? {}), ...Object.keys(at(fp, "simulated") ?? {})])].sort((a, b) => a - b);
   const stop = at(fp, "stop_pct");
   const firstPassage = {
-    rows: days.map((d) => ({ days: `${d} days`, analytic: shr(at(fp, "analytic", d)), simulated: shr(at(fp, "simulated", d)) })),
+    rows: days.map((d) => ({ days: `${d} days`, analytic: shr(at(fp, "analytic", d)), simulated: shr(at(fp, "simulated", d)), bridge: shr(at(fp, "bridge_continuous", d)) })),
     note: !fp
       ? missing("first_passage")
-      : `Chance of touching the ${ok(stop) ? `${minus(`−${stop} %`)} ` : ""}stop without drift at the window's volatility (${pc(at(fp, "sigma_annualised_pct"), false)} a year)` +
+      : `Unconditional Brownian benchmark for touching the ${ok(stop) ? `${minus(`−${stop} %`)} ` : ""}stop with zero log drift at the held-out window's volatility (${pc(at(fp, "sigma_annualised_pct"), false)} a year)` +
         `${ok(at(fp, "trials")) ? `; ${fp.trials} simulated paths` : ""}. ` +
         `Observed median holding time: ${ok(at(fp, "observed_median_holding_days")) ? `${cnt(fp.observed_median_holding_days)} days` : DASH}.`,
   };
@@ -594,7 +594,7 @@ function renderPhysics() {
   fill("physics-calib-body", t.calib.rows, 8, (r) => [r.label, r.reach, r.years, r.perYear, r.f3, r.p1, r.p2, r.go]);
 
   set("fp-note", t.firstPassage.note);
-  fill("physics-fp-body", t.firstPassage.rows, 3, (r) => [r.days, r.analytic, r.simulated]);
+  fill("physics-fp-body", t.firstPassage.rows, 4, (r) => [r.days, r.analytic, r.simulated, r.bridge]);
 
   for (const key of ["g-mean", "g-time", "g-drag", "g-kelly", "g-kelly-un", "g-kelly-ci", "g-zero", "g-fractions", "d-mean", "d-growth", "d-drag", "d-years"]) {
     set(key, t.growth[key]);

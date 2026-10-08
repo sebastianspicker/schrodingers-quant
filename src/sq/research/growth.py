@@ -8,9 +8,10 @@ question a trader asks next: what does the strategy do to an account that
 The ergodicity point (Peters 2019). The ensemble average of the per-trade
 return is what a fixed stake earns on average per trade, across many parallel
 traders. A single trader who reinvests experiences the time-average growth,
-the mean of ln(1 + r) per trade. The two differ by the volatility drag, about
-sigma^2 / 2 for small returns: a strategy with a positive mean trade can still
-shrink a compounding account, and the gap grows with the dispersion of trades.
+the mean of ln(1 + r) per trade. The Jensen gap ln(1 + mean(r)) - mean(ln(1 + r)) is the volatility
+drag, approximately sigma^2 / 2 for small returns. The arithmetic/log gap
+mean(r) - mean(ln(1 + r)) also includes the change of units. A positive mean
+trade can still accompany negative compounding growth.
 
 What is reported:
 
@@ -19,7 +20,8 @@ What is reported:
   ln(1 + f r) over the recorded trades (grid search; f_max = 1 is the
   project's no-leverage rule), with a percentile bootstrap of the trade list
   for its uncertainty and the share of resamples that say "do not trade" (f = 0).
-  The unconstrained optimum is reported so the cap's effect is visible.
+  A wider search capped at 5 is reported so the cap's effect is visible;
+  it is not a mathematically unconstrained optimum.
 - Daily level: annualised mean and growth of the fixed-stake equity's own
   daily returns (E_t / E_{t-1} - 1, the convention of statistics.json).
 - Frontier: for several fractions f, the compounding path
@@ -77,7 +79,7 @@ def _log_growth(returns: np.ndarray, fractions: np.ndarray) -> np.ndarray:
 
 def trade_growth(returns_pct: list[float]) -> dict:
     """Ensemble average versus time-average growth of the per-trade returns
-    (percent of stake). The gap is the volatility drag (see module docstring)."""
+    (percent of stake). The Jensen gap is volatility drag; the arithmetic/log gap is separate."""
     r = np.asarray(returns_pct, dtype=float) / 100
     n = len(r)
     if n == 0:
@@ -85,6 +87,8 @@ def trade_growth(returns_pct: list[float]) -> dict:
             "n": 0,
             "mean_pct": None,
             "time_average_growth_pct": None,
+            "ensemble_log_growth_pct": None,
+            "arithmetic_log_gap_pct": None,
             "volatility_drag_pct": None,
         }
     mean = float(np.mean(r)) * 100
@@ -93,14 +97,19 @@ def trade_growth(returns_pct: list[float]) -> dict:
             "n": n,
             "mean_pct": _round(mean),
             "time_average_growth_pct": None,
+            "ensemble_log_growth_pct": None,
+            "arithmetic_log_gap_pct": None,
             "volatility_drag_pct": None,
         }
     time_average = float(np.mean(np.log1p(r))) * 100
+    ensemble_log = float(np.log1p(np.mean(r))) * 100
     return {
         "n": n,
         "mean_pct": _round(mean),
         "time_average_growth_pct": _round(time_average),
-        "volatility_drag_pct": _round(mean - time_average),
+        "ensemble_log_growth_pct": _round(ensemble_log),
+        "arithmetic_log_gap_pct": _round(mean - time_average),
+        "volatility_drag_pct": _round(ensemble_log - time_average),
     }
 
 
@@ -175,6 +184,7 @@ def kelly_report(
         "resamples": resamples,
         "seed": seed,
         "f_max": f_max,
+        "wider_search_f_max": UNCONSTRAINED_F_MAX,
         "kelly_fraction": _round(kelly_fraction(r, f_max)),
         "kelly_fraction_unconstrained": _round(kelly_fraction_unconstrained(r)),
         "kelly_ci95": [
@@ -190,21 +200,24 @@ def kelly_report(
 
 
 def _years(dates: list[str]) -> float:
-    return ((date.fromisoformat(dates[-1]) - date.fromisoformat(dates[0])).days + 1) / 365
+    return (date.fromisoformat(dates[-1]) - date.fromisoformat(dates[0])).days / 365
 
 
 def daily_growth(values: list[float], dates: list[str]) -> dict:
-    """Annualised mean and time-average growth of the daily returns on the fixed
-    notional (365 days per year); `years` spans the first to the last mark."""
+    """Annualised mean and time-average growth of the daily equity returns of the
+    fixed-stake run (365 days per year); `years` spans the first to last mark."""
     r = daily_returns(values)
     mean = float(np.mean(r)) * ANNUALISATION_DAYS * 100
     growth = float(np.mean(np.log1p(r))) * ANNUALISATION_DAYS * 100
+    ensemble_log = float(np.log1p(np.mean(r))) * ANNUALISATION_DAYS * 100
     return {
         "days": len(r),
         "years": _round(_years(dates)),
         "annualised_mean_pct": _round(mean),
         "annualised_growth_pct": _round(growth),
-        "volatility_drag_pct": _round(mean - growth),
+        "ensemble_log_growth_pct": _round(ensemble_log),
+        "arithmetic_log_gap_pct": _round(mean - growth),
+        "volatility_drag_pct": _round(ensemble_log - growth),
     }
 
 

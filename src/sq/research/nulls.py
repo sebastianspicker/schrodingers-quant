@@ -9,41 +9,19 @@ each (through the exact replay in `breakout.py`), and counts how often the
 artificial paths do as well as the real one. This module is pure
 numpy/pandas, so it runs without Docker: `simulate` costs about 10 ms a path.
 
-What each null keeps, and what that means
+Model interpretation. Surrogates preserve selected constraints, not every
+property of the market. Blocks keep within-block order; IAAFT preserves the
+empirical marginal and approximately matches the spectrum. Neither guarantees
+removal of every predictable pattern or every nonlinear dependency.
 
-- Block shuffle. The real candles are cut into blocks of 30 (five days) and
-  put back in random order, each candle keeping its own return and wicks.
-  Marginal return distribution (fat tails included) and volatility clustering
-  inside a block survive; trends and regimes longer than a block do not.
-  If H1 looks good on the real path and ordinary on shuffles, its result came
-  from long-lived trends, which is what a breakout rule is meant to trade.
-- IAAFT surrogate (Schreiber and Schmitz 1996). Returns are rearranged so the
-  set of values is exactly the real one and the power spectrum (the linear
-  autocorrelation structure) is matched iteratively. Anything nonlinear is
-  destroyed, including volatility clustering that is not visible in the
-  spectrum of the returns themselves.
-- Geometric Brownian motion, zero drift. Independent normal returns with the
-  fitted volatility: no clustering, no fat tails, no trend. The textbook
-  "nothing to find" market.
-- GARCH(1,1) with Student-t innovations, zero drift or the window's mean
-  drift. Volatility clusters (calm and wild stretches) and returns have fat
-  tails, as in real markets, but there is no directional memory. The drifted
-  variant adds the window's sample mean log return per candle (not the
-  Student-t location parameter, which sits far from the mean on heavy-tailed
-  data), so the market rises on average as the real one did; compare the two
-  to see how much of a result is just drift.
-- Multifractal random walk (Bacry, Delour and Muzy 2001), zero drift.
-  Volatility is correlated over a very wide range of time scales (a power-law
-  decay of the log-volatility covariance, controlled by lambda^2), which
-  reproduces how BTC volatility clusters at hours, days and months at once.
-  The most demanding "no-edge" market in this module.
-
-What a null cannot do. A null model sharpens the test; it cannot create an
-edge. Passing a null (the real result is rare under it) only says the result
-is hard to get from the structure that null contains; failing it says the
-result is what that structure alone would give. Every null here is fitted to
-the same history H1 was designed on, so a favourable comparison is evidence,
-not proof, and an unfavourable one is a strong warning.
+All fitted models generate LOG returns. Zero log drift is not a price
+martingale: Gaussian increments imply E[P(t)/P(0)] = exp(sigma^2 t / 2).
+Student-t log increments have no finite positive exponential moment, so their
+exponentiated prices have no finite expectation. GARCH-t and MRW are finite-path
+stress models, not proofs of an efficient market or calibrated financial tails.
+The reported GO shares are conditional on these models, not statistical
+false-positive rates for a demonstrated no-edge null. Fits and surrogate
+comparisons on already inspected history are descriptive.
 
 Synthetic paths have no intrabar information of their own. Highs and lows are
 built from the body of each candle widened by upper and lower wick ratios
@@ -52,31 +30,24 @@ channel rules see realistic highs and lows. The wick is independent of the
 return in the fitted models and in IAAFT; block shuffle keeps each candle's
 own wicks. Candles open at the previous close (no gaps) and volume is 1.
 
-Forward-protocol calibration (`forward_calibration`). The forward test
-(docs/forward-test.md) stops at an F3 drawdown above 31.31 % before the 30th
-trade, and passes only if net return is positive (P1) and the drawdown is at
-most 0.6 times that of buy-and-hold on the same window (P2). With about six
-trades a year it needs years of data. This runs the protocol on many simulated
-futures of each null and reports how long it takes, how often each gate fires
-and how often the verdict would be GO. If the share of GO under a no-edge null
-is not small, the protocol cannot tell an edge from luck; if the share under a
-drifted null is small, the protocol is too strict to ever pass.
-
-  * The 30th trade counts completed trades only; a position force-closed at
-    the path's end does not count.
-  * P1 uses the realised result at the 30th trade's close. F3 uses the 4h
-    marked-to-market drawdown from the initial notional over the whole window.
-  * Buy-and-hold on the same window is on the forward report's basis
-    (`sq.live.forward.benchmark_report`): bought at the window's first open
-    with the entry fee inside the budget, each mark reserving the exit fee.
+Forward-protocol calibration (`forward_calibration`) evaluates F3, F4, P1 and
+P2 with idealised fills. An F3 breach disqualifies completion even if the path
+later recovers. Reach and years-to-completion exclude stopped paths; timing
+ignoring F3 and trades/year over the full simulated horizon are explicitly
+counterfactual. P1/P2 shares require eligible completion and use all trials as
+the denominator. Buy-and-hold includes entry and reserved liquidation fees.
+CooldownPeriod, StoplossGuard and ratios-mode MaxDrawdown are replayed.
+Stop-exit and MaxDrawdown-lock frequencies describe the full counterfactual
+horizon. F1/F2 operational failures are not simulated. No alternative with an
+edge is simulated, so test power is not estimated.
 
 First passage (`stop_hit_probability`, `first_passage_check`). H1 has a -20 %
 catastrophe stop. For a Brownian log price the chance that the price touches a
 barrier within a horizon has a closed form (reflection principle); the module
-evaluates it and compares it with simulated 4h paths. The simulation watches
-only 4h closes, so it undershoots the continuous formula slightly; the
-strategy's stop watches the low of every candle, which is closer to the
-formula.
+evaluates it against both discrete 4h closes and a Brownian-bridge
+conditional crossing estimator. The latter integrates out crossings between
+closes and reports Monte Carlo standard errors; it matches continuous monitoring.
+Neither calculation estimates the joint H1 entry/channel-exit/stop problem.
 
 Fitting. GARCH is fitted by maximum likelihood with the module's own
 Nelder-Mead simplex (no scipy). The parameters are unconstrained in the
@@ -87,8 +58,8 @@ The multifractal fit regresses the covariance of ln|r| at lags 1..max_lag on
 multifractal simulator draws the Gaussian log-volatility field by circulant
 embedding with the FFT; if the embedding has negative eigenvalues (the
 covariance lambda^2 ln(L / (|tau| + 1)) is not guaranteed positive definite
-once truncated), they are clipped to zero, which slightly lowers the field's
-variance, and the volatility then matches sigma only approximately.
+once truncated), they are clipped to zero, which raises the field's variance.
+The volatility normalization uses the resulting diagonal covariance.
 
 Randomness uses the legacy `numpy.random.RandomState`, whose stream is stable
 across numpy versions, so results are reproducible exactly from the seed. Each
@@ -441,7 +412,7 @@ def simulate_mrw(
     lambda^2 ln(L / (|tau| + 1)) for |tau| < L and 0 beyond, drawn by circulant
     embedding with the FFT (negative eigenvalues of the embedding are clipped
     to zero). Then r = sigma * eps * exp(omega - Var(omega)) with eps standard
-    normal, so that Var(r) is sigma^2 (approximately, because of the clipping).
+    normal, so that Var(r) is sigma^2 using the actual embedding variance after clipping.
     `drift` adds params["mu"] if present; the fit does not estimate it.
     """
     lambda2, integral = params["lambda2"], params["integral_scale"]
@@ -457,28 +428,28 @@ def simulate_mrw(
     eigenvalues = np.clip(np.fft.fft(row).real, 0.0, None)
     noise = rng.standard_normal(size) + 1j * rng.standard_normal(size)
     field = (np.fft.fft(np.sqrt(eigenvalues) * noise) / math.sqrt(size)).real[:n]
-    variance = lambda2 * math.log(integral)
+    variance = float(eigenvalues.mean())
     return mu + params["sigma"] * eps * np.exp(field - variance)
 
 
 MODELS: dict[str, dict] = {
     "gbm_zero_drift": {
-        "label": "Geometric Brownian motion, zero drift",
+        "label": "Geometric Brownian motion, zero log drift",
         "fit": fit_gbm,
         "simulate": lambda params, n, rng: simulate_gbm(params, n, rng, drift=False),
     },
     "garch_t_zero_drift": {
-        "label": "GARCH(1,1)-t, zero drift",
+        "label": "GARCH(1,1)-t, zero log drift",
         "fit": fit_garch_t,
         "simulate": lambda params, n, rng: simulate_garch_t(params, n, rng, drift=False),
     },
     "garch_t_drift": {
-        "label": "GARCH(1,1)-t, with the window's mean drift",
+        "label": "GARCH(1,1)-t, with the window's mean log drift",
         "fit": fit_garch_t,
         "simulate": lambda params, n, rng: simulate_garch_t(params, n, rng, drift=True),
     },
     "mrw_zero_drift": {
-        "label": "Multifractal random walk, zero drift",
+        "label": "Multifractal random walk, zero log drift",
         "fit": fit_mrw,
         "simulate": lambda params, n, rng: simulate_mrw(params, n, rng, drift=False),
     },
@@ -552,9 +523,8 @@ def null_comparison(
     the share of trials with net return at least the observed one, with
     drawdown at most the observed one, with both, the 5th, 50th and 95th
     percentiles of return, drawdown and trade count, and the share of paths
-    with a stop exit (where the replay leaves the regime the
-    record validates: StoplossGuard is modelled, MaxDrawdown is not, see
-    `breakout`).
+    with a stop exit or a MaxDrawdown protection lock. Protection semantics
+    are covered separately by synthetic and pinned-runtime contract tests.
     """
     models = MODELS if models is None else models
     dates = candles["date"]
@@ -614,12 +584,20 @@ def null_comparison(
             "drawdown_pct": _percentiles(dd),
             "trades": _percentiles([row["trades"] for row in rows]),
             "share_paths_with_stop_exit": float(np.mean([row["stop_exits"] > 0 for row in rows])),
+            "share_paths_with_max_drawdown_lock": float(
+                np.mean([row["max_drawdown_locks"] > 0 for row in rows])
+            ),
             "fit": _fit_summary(params) if params is not None else None,
         }
         if prefix > 0:
             results[key]["prefix_sha256"] = _prefix_hash(
                 [
-                    [row["net_return_pct"], row["mtm_max_drawdown_pct"], row["trades"]]
+                    [
+                        row["net_return_pct"],
+                        row["mtm_max_drawdown_pct"],
+                        row["trades"],
+                        row["max_drawdown_locks"],
+                    ]
                     for row in rows[:prefix]
                 ]
             )
@@ -677,14 +655,17 @@ def forward_calibration(
     """The forward-test protocol (F3, F4, P1, P2) on simulated futures.
 
     With `prefix` > 0 every model also reports `prefix_sha256` of its first
-    `prefix` trials' [reached, years or null, f3, p1, p2]; independent of `trials`.
+    `prefix` trials' [eligible completion, counterfactual years or null,
+    f3, raw p1, raw p2, full-horizon MaxDrawdown lock count]; independent of
+    `trials`. Public P1/P2 shares additionally require eligible completion.
 
     Each model is fitted on `r_fit`, `max_years` of 4h candles (plus warm-up)
     are simulated per trial and H1 is run once per path. The window ends at the
     close of the `trades_required`-th completed trade, or at the path end if
     there are fewer (then the path did not reach F4). Shares are over all
-    trials; `years_to_required_trades` over the paths that reached it;
-    `trades_per_year` is completed trades divided by `max_years` per path.
+    trials. `years_to_required_trades` uses only paths reaching the target
+    without an F3 breach. `*_ignoring_f3` and `trades_per_year` describe
+    counterfactual continuation despite STOP, the latter over `max_years`.
     """
     n = STEPS_PER_YEAR * max_years
     start = pd.Timestamp("2030-01-01", tz="UTC")
@@ -701,8 +682,8 @@ def forward_calibration(
             fits[fit_name] = model["fit"](r_fit)
         params = fits[fit_name]
         rng = _rng(seed, key)
-        years, per_year, outcomes = [], [], []
-        counts = {"reached": 0, "f3": 0, "p1": 0, "p2": 0, "go": 0, "stop": 0}
+        years, unconstrained_years, per_year, outcomes = [], [], [], []
+        counts = {"reached": 0, "f3": 0, "p1": 0, "p2": 0, "go": 0, "stop": 0, "drawdown_lock": 0}
         for _ in range(trials):
             r = model["simulate"](params, WARMUP + n, rng)
             path = candles_from_returns(r, wicks, rng, first, p0)
@@ -710,13 +691,15 @@ def forward_calibration(
             completed = trades[trades["exit_reason"] != "force_exit"]
             per_year.append(len(completed) / max_years)
             counts["stop"] += int((trades["exit_reason"] == "stop_loss").any())
+            lock_count = int(trades.attrs.get("max_drawdown_locks", 0))
+            counts["drawdown_lock"] += lock_count > 0
             reached = len(completed) >= trades_required
             trial_years = None
             if reached:
                 used = completed.iloc[:trades_required]
                 window_end = used["close_date"].iloc[-1] + STEP
-                trial_years = (used["close_date"].iloc[-1] - start).days / 365.25
-                years.append(trial_years)
+                trial_years = (used["close_date"].iloc[-1] - start) / pd.Timedelta(days=365)
+                unconstrained_years.append(trial_years)
             else:
                 used, window_end = trades, path_end
             curve = breakout.equity(used, path, start, window_end, notional)
@@ -725,10 +708,15 @@ def forward_calibration(
             # window's first open, entry fee inside the budget, exit fee reserved.
             hold = notional / (1 + fee) / float(marks["open"].iloc[0]) * marks["close"] * (1 - fee)
             verdict = judge_window(curve, hold, notional, f3_drawdown_limit_pct, p2_factor, reached)
+            # F3 is latched: later trades cannot complete the protocol after STOP.
+            # Retain unconstrained timing separately to make this censoring visible.
+            reached = reached and not verdict["f3_stop"]
+            if reached:
+                years.append(trial_years)
             counts["reached"] += reached
             counts["f3"] += verdict["f3_stop"]
-            counts["p1"] += verdict["p1_pass"]
-            counts["p2"] += verdict["p2_pass"]
+            counts["p1"] += reached and verdict["p1_pass"]
+            counts["p2"] += reached and verdict["p2_pass"]
             counts["go"] += verdict["go"]
             outcomes.append(
                 [
@@ -737,6 +725,7 @@ def forward_calibration(
                     int(verdict["f3_stop"]),
                     int(verdict["p1_pass"]),
                     int(verdict["p2_pass"]),
+                    lock_count,
                 ]
             )
         results[key] = {
@@ -744,12 +733,15 @@ def forward_calibration(
             "trials": trials,
             "share_reached_required_trades": counts["reached"] / trials,
             "years_to_required_trades": _percentiles(years),
+            "share_reached_ignoring_f3": len(unconstrained_years) / trials,
+            "years_to_required_trades_ignoring_f3": _percentiles(unconstrained_years),
             "trades_per_year": _percentiles(per_year),
             "share_f3_stop": counts["f3"] / trials,
             "share_p1_pass": counts["p1"] / trials,
             "share_p2_pass": counts["p2"] / trials,
             "share_go": counts["go"] / trials,
             "share_paths_with_stop_exit": counts["stop"] / trials,
+            "share_paths_with_max_drawdown_lock": counts["drawdown_lock"] / trials,
             "fit": _fit_summary(params),
         }
         if prefix > 0:
@@ -804,7 +796,8 @@ def first_passage_check(
 
     Simulated paths are zero-drift Brownian log prices in 4h steps; a path hits
     when its running minimum of the 4h close falls below p0 * (1 - stop)
-    within the horizon.
+    within the horizon. `bridge_continuous` instead integrates the conditional
+    crossing probability between endpoints, with its Monte Carlo standard error.
     """
     rng = _rng(seed, "first_passage")
     steps = [int(round(days * 6)) for days in horizons_days]
@@ -812,16 +805,28 @@ def first_passage_check(
     log_price = np.cumsum(sigma_step * rng.standard_normal((trials, max(steps))), axis=1)
     running_min = np.minimum.accumulate(log_price, axis=1)
     barrier = math.log(1 - stop)
-    analytic, simulated = {}, {}
+    # Conditional crossing probability of each Brownian bridge between closes.
+    # Given endpoints x,y above b: P(min <= b) = exp(-2(x-b)(y-b)/sigma_step^2).
+    previous = np.concatenate((np.zeros((trials, 1)), log_price[:, :-1]), axis=1)
+    above = (previous > barrier) & (log_price > barrier)
+    distance_product = np.maximum((previous - barrier) * (log_price - barrier), 0)
+    crossing = np.where(above, np.exp(-2 * distance_product / sigma_step**2), 1.0)
+    survival = np.cumprod(1 - crossing, axis=1)
+    analytic, simulated, bridge, bridge_se = {}, {}, {}, {}
     for days, k in zip(horizons_days, steps, strict=True):
         analytic[str(days)] = stop_hit_probability(sigma_annual, days, stop)
         simulated[str(days)] = float((running_min[:, k - 1] <= barrier).mean())
+        hit = 1 - survival[:, k - 1]
+        bridge[str(days)] = float(hit.mean())
+        bridge_se[str(days)] = float(hit.std(ddof=1) / math.sqrt(trials))
     return _round(
         {
             "sigma_annualised_pct": sigma_annual * 100,
             "stop_pct": stop * 100,
             "analytic": analytic,
             "simulated": simulated,
+            "bridge_continuous": bridge,
+            "bridge_standard_error": bridge_se,
             "trials": trials,
         }
     )

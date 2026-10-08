@@ -52,7 +52,7 @@ unit test fails if the tracked file drifts from a fresh build
 `experiments/H1/physics.json` is the physics-informed assessment
 ([ADR-0008](../docs/adr/0008-physics-informed-nulls.md), [physics](../docs/physics.md)):
 stylized facts of the market, H1 replayed on surrogate and simulated markets
-without an edge, the forward protocol's false-GO rate under those markets, a
+with specified constraints, the forward protocol's model-conditioned GO rates, a
 first-passage check of the stop, growth and Kelly figures, and the trials
 ledger. `make physics` rebuilds it from `data/` and the recorded curves without
 Docker (a few minutes); a unit test rebuilds the cheap sections and a fixed

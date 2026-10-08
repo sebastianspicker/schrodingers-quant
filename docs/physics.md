@@ -1,169 +1,172 @@
 # Physics in Schrödinger's Quant
 
-**As of 2026-10-08.** What physics the project actually uses, where, and what
-it cannot do. The figures live in
-[physics.json](../research/experiments/H1/physics.json) (`make physics`), the
-decision in [ADR-0008](adr/0008-physics-informed-nulls.md), the demo page
-shows them under "Market structure and null models".
+**Reviewed 2026-10-08.** The reproducible diagnostics are in
+[physics.json](../research/experiments/H1/physics.json), rebuilt with
+`make physics`. [ADR-0008](adr/0008-physics-informed-nulls.md) records their
+scope. Schema 3 includes all three configured protections as well as the
+mathematical and interpretation corrections introduced in schema 2. H1's frozen rules and forward thresholds
+are unchanged.
 
-## In short
+## What the diagnostics measure
 
-- **Statistical physics is used in three places:** as the description of the
-  market H1 trades (stylized facts), as the source of null models that keep
-  those facts but remove what a breakout needs (surrogates, volatility
-  cascades), and as the growth-rate view of sizing (ergodicity). None of it
-  changes H1's rules. All of it changes how hard the test is.
-- **Quantum mechanics is a framing, not a model.** One mapping is exact and
-  is written down below: the diffusion that describes a random-walk price is
-  an imaginary-time Schrödinger equation, so the −20 % stop is a
-  first-passage problem with a potential. It yields the same numbers as the
-  diffusion. The name's other half, observation collapsing the state, is the
-  multiple-testing problem, and the project charges for it with a ledger and
-  the deflated Sharpe ratio.
-- **Nothing here is evidence of an edge.** The held-out window was inspected
-  before these diagnostics were added, so on that window they are descriptive.
-  The one confirmatory use is forward: the calibration says how often the
-  predeclared forward test would say GO in a market with no edge.
+Statistical physics supplies useful descriptions of fluctuations, surrogate
+series, stochastic volatility and multiplicative growth. Quantum mechanics
+supplies a formal diffusion correspondence, not a trading model or evidence
+of an edge. The held-out data had already been inspected before these
+analyses: all historical comparisons are descriptive.
 
-## 1. What the market looks like (stylized facts)
+| Diagnostic | Interpretation and limitation |
+| --- | --- |
+| Hill tail index α | Estimates a power-law tail from the largest 5% of observations. Under a genuine asymptotic power law, variance exists for α > 2. A finite-sample estimate near 2 neither establishes that law nor establishes finite variance. |
+| Skewness, excess kurtosis | Describe asymmetry and tail weight in the sample; extreme observations can dominate both. |
+| Autocorrelation of r and \|r\| | Measures linear dependence and volatility clustering at selected lags. Zero return autocorrelation does not imply independence. |
+| DFA exponent H | Describes scaling over the fitted candle ranges. H near 0.5 is consistent with iid increments at those scales. It does not exclude drift or nonlinear predictability; H > 0.5 is not necessary or sufficient for breakout profitability. |
+| Order-4 permutation entropy | Measures frequencies of ordinal patterns of four returns. Near one means those patterns are nearly uniform, not that every kind of predictability is absent. |
+| MRW intermittency λ² | Fits logarithmically decaying covariance of log absolute returns. A positive fitted slope alone does not establish multifractality. |
 
-The econophysics literature of the 1990s established that returns of liquid
-assets share a few robust properties regardless of the asset (Mantegna and
-Stanley 1995; Gopikrishnan, Plerou, Amaral, Meyer and Stanley 1998; Cont 2001).
-`sq.research.stylized` measures them on the 4h BTC/EUR log returns per period:
+Shuffle ranges compare these statistics with reordered observations. They
+are not confidence intervals for a trading edge, and inspecting many periods
+and diagnostics introduces further selection opportunities.
 
-| Figure | What it measures | Why a breakout trader cares |
-| --- | --- | --- |
-| Tail index α (Hill) | How fast the frequency of large moves falls: P(\|r\| > x) ~ x^−α. Equities give α ≈ 3, the "inverse cubic law". | α near 2 means the variance is barely finite; the sample mean and Sharpe ratio of 14 trades are then unreliable, and the −20 % stop is reachable in one candle. |
-| Excess kurtosis, skewness | How much fatter than Gaussian the tails are, and which side. | A stop on the fat side fires more often than a Gaussian model predicts. |
-| Autocorrelation of r and of \|r\| | Linear memory of returns (near zero in an efficient market) and of volatility (long-lived). | Volatility clustering is why H2 sizes by recent volatility and why trade returns are not independent. |
-| Hurst exponent H (DFA) | Persistence of the price path: H = 0.5 memoryless, H > 0.5 trends continue, H < 0.5 they revert. | A channel breakout earns money only from persistence. If H sits inside the range that shuffled returns produce, DFA detects no persistence at this sample size; permutation entropy below its shuffle range would still indicate short-range ordinal structure. |
-| Permutation entropy | How evenly the up/down orderings of four consecutive candles are distributed; 1 is maximal disorder. | Values below the shuffle range mean there is ordinal structure; values inside it mean none at this horizon. |
-| MRW intermittency λ² | Strength of the volatility cascade across time scales (Bacry, Delour and Muzy 2001). | It parametrises the multifractal null model below. |
+## Surrogates and fitted markets
 
-The Hurst exponent uses detrended fluctuation analysis (Peng et al. 1994), a
-method from statistical physics for non-stationary series. The shuffle range
-is the physics-style null: the same returns in random order.
+The replay preserves the strategy and varies the input market. The recorded
+41 trades reproduce at both cost levels. Synthetic paths additionally exercise
+protection boundaries that the historical trades do not establish. Cooldown,
+StoplossGuard and MaxDrawdown use the pinned backtest's rounded lock boundaries
+and strict elapsed-time lookback limits, including across missing candles.
 
-## 2. Null models (what a market without an edge produces)
+MaxDrawdown uses Freqtrade 2026.8's default **ratios** mode. Within the last 540
+candles, sum the closed trades' net profit ratios chronologically, starting at
+zero. If the greatest absolute fall from a running peak exceeds 0.25, entry
+is locked until the next candle boundary after the latest close plus 180
+candles. This is neither compounded drawdown nor a 25% fall from account equity.
+It is separate from the forward protocol's F3 account-curve measurement.
 
-ADR-0006 added two nulls: random timing at equal exposure and constant
-exposure. Both keep the real price path and vary the strategy. The physics
-nulls do the opposite: keep the strategy, vary the market. Each null preserves
-a stated set of the market's properties and destroys the rest; H1's rules are
-replayed on thousands of such markets by `sq.research.breakout`, a pure
-reimplementation that reproduces every recorded trade
-(`tests/test_breakout.py`).
+The training replay triggers one such lock after the 2021-06-20 12:00 UTC
+signal exit, expiring 2021-07-20 16:00 UTC. It changes no historical trade:
+there is no entry during the lock. The previous assertion that no protection
+fired was therefore incorrect. Synthetic boundary cases are checked directly
+against the pinned protection. Reports include the share of paths with at
+least one MaxDrawdown lock; calibration's lock frequency uses the full
+counterfactual horizon, even after F3.
 
-| Null | Keeps | Destroys | Source |
-| --- | --- | --- | --- |
-| Block shuffle (5-day blocks) | The window's returns and wicks, short-range clustering | Order beyond five days, hence trends | permutation null |
-| IAAFT surrogate | The exact return distribution and the linear power spectrum | All nonlinear temporal structure | Schreiber and Schmitz 1996 (nonlinear dynamics) |
-| GBM, zero drift | The window's volatility | Everything else | Bachelier 1900, Osborne 1959 |
-| GARCH(1,1)-t, zero drift / with the window's mean drift | Volatility clustering, heavy tails | Drift (first variant), multiscale cascade | Engle 1982, Bollerslev 1986 |
-| MRW, zero drift | Multifractal volatility cascade with the window's λ² | Drift, any return predictability | Bacry, Delour and Muzy 2001 (turbulence cascades) |
+| Model | Constraints and limitations |
+| --- | --- |
+| Five-day block shuffle | Preserves returns, wicks and order within each block; disrupts order across blocks. It can retain drift and some longer-lived structure. |
+| IAAFT | Preserves the empirical return distribution exactly and the power spectrum approximately. It disrupts temporal structure beyond these constraints, but does not guarantee destruction of every nonlinear dependency. |
+| Gaussian log increments (GBM) | Constant fitted volatility, independent increments; zero **log** drift. |
+| GARCH(1,1)-t | Conditional variance clustering and Student-t log-return innovations, with either zero or historical mean log drift. Long-window fits reach the persistence cap. |
+| MRW | Gaussian innovations multiplied by a correlated lognormal volatility field; fitted log-volatility covariance and zero log drift. FFT clipping, if needed, changes covariance; normalization uses the resulting variance. |
 
-Synthetic paths have no intrabar information of their own; highs and lows are
-built from wick ratios resampled from the real candles so the channel sees
-realistic extremes. The replay models the StoplossGuard protection but not
-the MaxDrawdown protection, and the record never triggered either, so paths
-with stop exits (reported per null) leave the validated regime. The output per null is the share of markets on which H1
-matched its recorded return and drawdown. A small share says the result is
-unusual for that null; it does not say what caused it, and it is computed on a
-window that was inspected first.
+These are specified stochastic constructions. No maximum-entropy derivation
+has been established for this set. IAAFT's constraints and limitations are
+discussed by [Schreiber and Schmitz](https://arxiv.org/abs/chao-dyn/9909037).
 
-The maximum-entropy principle is the thread through this table: each null is
-the least-structured market consistent with a stated set of constraints, so
-the shares answer "how much of H1's result do those constraints alone
-explain?"
+**Zero log drift is not zero expected price return.** If
+`Δlog P ~ N(0, σ²Δt)`, then `E[P(t)/P(0)] = exp(σ²t/2)`.
+A price-martingale GBM would instead require log drift `−σ²/2`.
+Student-t log increments have no finite positive exponential moment:
+exponentiating them gives infinite expected prices even though every generated
+finite path is finite. Lognormal-volatility mixtures also need care with
+exponential moments. These fitted paths are stress scenarios, not demonstrated
+no-edge markets. See the [GBM derivation](https://www.columbia.edu/~ks20/FE-Notes/4700-07-Notes-GBM.pdf).
 
-## 3. The stop as a first-passage problem, and the Schrödinger mapping
+Resampled wicks in fitted models and IAAFT are independent of the generated
+return; they are not extrema derived from the same continuous diffusion.
+Return/drawdown shares therefore depend on this candle construction, costs,
+fitted parameters and replay limitations. They are not model-free p-values.
 
-A long position with a catastrophe stop is a particle diffusing above an
-absorbing barrier. For a log price X with drift μ and volatility σ, the
-probability that X falls by b = −ln(1 − 0.2) within time t is
+## Forward protocol calibration
 
-P(t) = Φ((−b − μt) / (σ√t)) + exp(−2μb / σ²) · Φ((−b + μt) / (σ√t)),
+The unchanged protocol requires 30 completed trades, positive fixed-stake
+return (P1), drawdown at most 0.6 times buy-and-hold's (P2), and no drawdown
+above 31.31% (F3). A breach is latched: subsequent recovery or trades cannot
+make that path complete the test.
 
-which for μ = 0 reduces to 2Φ(−b / (σ√t)). `physics.json` compares this
-closed form with simulated 4h paths at the held-out window's volatility.
+Schema 2 reports completion and time to completion only on paths surviving
+F3. It keeps time-to-30 **ignoring F3** separately as a counterfactual. The
+full-horizon trades/year statistic also ignores stopping. P1/P2 pass shares
+require eligible completion; all shares use all trials as their denominator.
+These are model-conditioned GO rates, not established statistical false-GO
+rates. Operational F1/F2 failures are not simulated, and no alternative with
+an edge is simulated, so power is not estimated. Reconsidering F3 would require
+a separate protocol decision; this review does not change it.
 
-The density p(x, t) of X obeys the Fokker–Planck equation
-∂p/∂t = −μ ∂p/∂x + (σ²/2) ∂²p/∂x². Substituting p = exp(μx/σ² − μ²t/(2σ²)) ψ
-turns it into ∂ψ/∂t = (σ²/2) ∂²ψ/∂x², the free Schrödinger equation in
-imaginary time with ħ²/(2m) ↔ σ²/2; a mean-reverting price (Ornstein–Uhlenbeck)
-adds a quadratic potential and becomes the harmonic oscillator. The absorbing
-stop is a Dirichlet boundary, the exit channel a moving boundary, and the
-holding-time distribution is the first-passage density of that boundary
-problem. The mapping is exact (Risken 1989); it is the same correspondence
-Baaquie's quantum-finance formalism builds on. It changes no number: the
-project reports the diffusion result and keeps the mapping as the honest
-content behind the name.
+## First passage and the Schrödinger correspondence
 
-What is *not* used: path-integral option pricing (no derivatives here),
-quantum walks as price models (no evidence they describe markets), and
-quantum-inspired portfolio optimisers (one asset, nothing to optimise).
+Let log price relative to entry satisfy `dX = μ dt + σ dW`, with constant
+coefficients, `X(0)=0` and absorbing barrier `−b = ln(0.8)`. For `t > 0` and
+`σ > 0`, the reflection-principle result is
 
-## 4. Calibrating the forward test
+`P(τ ≤ t) = Φ((-b − μt)/(σ√t)) + exp(−2μb/σ²) Φ((-b + μt)/(σ√t))`.
 
-The forward protocol ([forward-test.md](forward-test.md)) judges H1 after 30
-closed trades with P1 (net return > 0) and P2 (drawdown ≤ 0.6 × buy-and-hold's)
-and stops on F3 (drawdown > 31.31 %). A test is only as good as its false
-positive rate. `physics.json` reports, for each fitted null with no drift and
-for GARCH with the historical mean drift: how long 30 trades take, how often
-F3 stops the test first, and how often P1 and P2 both pass. Under a no-drift
-model that GO share is the protocol's false-GO rate; under the drifted model
-it is the pass rate in a rising market without timing skill. No market with
-an edge is simulated, so the protocol's power is not measured. A future GO is read against these
-rates, not as proof of an edge.
+At zero log drift this is `2Φ(−b/(σ√t))`. The original 4h-close simulation
+misses crossings between observations. The new Brownian-bridge estimator
+integrates them: conditional on consecutive endpoints `x,y > −b`, the
+crossing probability is `exp(−2(x+b)(y+b)/(σ²Δt))`. Multiplying interval
+survival probabilities gives each sampled skeleton's conditional survival.
+The report supplies its mean and Monte Carlo standard error, alongside the
+analytic result and the discrete-close estimate. This construction is covered
+by [Glasserman and Staum](https://business.columbia.edu/sites/default/files-efs/pubfiles/4311/one-step_survival.pdf).
 
-## 5. Growth, Kelly and ergodicity
+This is an unconditional constant-volatility barrier benchmark. H1 entries
+select market states, its channel exit competes with the stop, and real gaps
+and fees alter losses. It is not H1's conditional stop probability.
 
-The fixed stake of the record reports the ensemble average: the mean of many
-parallel €1,000 bets. A single account that compounds experiences the time
-average, the mean of ln(1 + r), lower by the volatility drag (≈ σ²/2 per
-trade). This is the distinction ergodicity economics insists on (Peters 2019;
-Peters and Gell-Mann 2016). The superseded compounding run is the same
-distinction seen from the drawdown side: a stake that grows with the account
-turns the same trades into a deeper fall from a higher peak. `physics.json`
-reports both averages, the Kelly fraction (the stake share that maximises the
-time average, capped at 1 because the project does not borrow) with a
-bootstrap interval, and a growth-versus-drawdown frontier of the recorded
-marks. H2's volatility targeting is a special case of this view.
+For diffusion constant `D=σ²/2`, the forward density satisfies
+`∂t p = −μ ∂x p + D ∂xx p`. Substituting
+`p = exp(μx/σ² − μ²t/(2σ²)) ψ` gives `∂t ψ = D ∂xx ψ`.
+The imaginary-time quantum equation is `∂t ψ = −Hψ/ħ`; thus with the same
+time coordinate the kinetic correspondence is **D = ħ/(2m)**, or
+`D=1/(2m)` in units `ħ=1`. For Ornstein–Uhlenbeck drift `−κx`, the spatial
+transform gives
 
-## 6. Observation and the ledger
+`∂t ψ = D ∂xx ψ − [κ²x²/(4D) − κ/2] ψ`.
 
-Looking at data is a measurement. Every strategy variant evaluated on the
-same history is a trial, and the best of N trials is inflated by selection
-alone. [research/ledger.json](../research/ledger.json) lists every look at the
-record; the deflated Sharpe ratio (Bailey and López de Prado 2014) computes
-what the best of that many unrelated trials would show by luck and the
-probability that H1's held-out Sharpe exceeds it after adjusting for the
-skewness and kurtosis of its daily returns. This is the project's version of
-the observer effect, and the reason every hypothesis is predeclared.
+This is a harmonic-oscillator operator with an energy shift. An absorbing
+barrier becomes a Dirichlet boundary. H1's rolling channel is path-dependent;
+it cannot be reduced to a prescribed moving boundary in a one-dimensional
+price-only PDE without augmenting the state. The correspondence changes no
+probability and adds no quantum advantage. See
+[Pavliotis, Stochastic Processes and Applications](https://www.ma.imperial.ac.uk/~pavl/PavliotisBook.pdf).
 
-## What this can and cannot show
+## Growth and sizing
 
-- It can say what the market looks like, which of its properties alone
-  reproduce H1's result, how long the forward test will take, and how often
-  it would pass with no edge.
-- It cannot create evidence from 14 trades, and it cannot be used to tune H1:
-  a physics-derived entry filter on existing data is a new hypothesis for
-  forward data only.
-- The null set was declared in the code and in the ADR draft before the
-  first build; the repository history cannot show that order, so the claim
-  rests on the author. No null was added or removed after the first build.
+For empirical trade returns `r`, report the arithmetic mean `m=mean(r)` and
+log growth `g=mean(ln(1+r))`. A finite recorded average is an estimator, not
+proof of a long-run ensemble or time limit. Under suitable stationary,
+ergodic assumptions, `g` describes multiplicative growth.
 
-## References
+The volatility drag in common log units is the Jensen gap
+`ln(1+m) − g`, nonnegative and zero for constant returns. For small returns
+it is approximately `Var(r)/2`. The different quantity `m−g` additionally
+contains the simple-return/log-return conversion and is approximately
+`E[r²]/2`. Schema 2 reports both rather than calling the latter volatility.
+Annualized growth here is a log rate; its corresponding simple CAGR is
+`exp(g_annual)−1`.
 
-Baaquie (2004) Quantum Finance. Bachelier (1900) Théorie de la spéculation.
-Bacry, Delour, Muzy (2001) Phys. Rev. E 64, 026103. Bailey, López de Prado
-(2014) J. Portfolio Management 40(5). Bandt, Pompe (2002) Phys. Rev. Lett.
-88, 174102. Bollerslev (1986) J. Econometrics 31. Cont (2001) Quantitative
-Finance 1. Engle (1982) Econometrica 50. Gopikrishnan, Meyer, Amaral,
-Stanley (1998) Eur. Phys. J. B 3, 139. Gopikrishnan, Plerou, Amaral, Meyer,
-Stanley (1999) Phys. Rev. E 60, 5305. Mantegna, Stanley (1995) Nature 376.
-Osborne (1959) Operations Research 7. Peng et al. (1994) Phys. Rev. E 49.
-Peters (2019) Nature Physics 15. Peters, Gell-Mann (2016) Chaos 26. Risken
-(1989) The Fokker–Planck Equation. Schreiber, Schmitz (1996) Phys. Rev.
-Lett. 77.
+Empirical Kelly maximizes `mean(ln(1+f*r))` on a grid with `0 ≤ f ≤ 1`.
+The wider search is capped at **5**, so its result is not an unconstrained
+optimum. The trade bootstrap is IID and descriptive; it does not account for
+serial dependence, unobserved tail losses or selection. The daily frontier
+synthetically compounds fixed-notional daily P&L increments. It is not a
+self-financing replay of H1 with stakes resized only at entries, and does not
+supply revised fills or rebalancing costs.
+
+## Research ledger and deflated Sharpe
+
+The ledger records seven counted evaluations. Four lack Sharpe ratios; the
+three available values come from different periods of the same strategy.
+Their dispersion is not the cross-strategy variance on a common evaluation
+sample required for the selection adjustment. Schema 2 therefore leaves the
+expected maximum and deflated Sharpe **unavailable**, replacing the previous
+0.74 score. Missing evidence is not a zero selection penalty.
+
+Even with comparable inputs, a raw count of correlated evaluations is not an
+estimated effective independent-trial count. The implemented asymptotic
+formula adjusts for skewness and kurtosis, not serial dependence; its score
+is not a posterior probability that H1 has an edge. The original
+[Bailey and López de Prado paper](https://www.davidhbailey.com/dhbpapers/deflated-sharpe.pdf)
+states the required selection inputs. Quantum observation and research
+selection are distinct phenomena; “observer effect” is only a metaphor here.

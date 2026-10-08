@@ -1,5 +1,5 @@
 {
- "schema_version": 1,
+ "schema_version": 3,
  "pair": "BTC/EUR",
  "timeframe": "4h",
  "notional_eur": 1000,
@@ -8,12 +8,12 @@
  "equity_curves_sha256": "5206ed92601acfdf3d0a29271bafb45516adbd52878ef760c4c4987e54139290",
  "prefix_trials": 25,
  "method": {
-  "stylized_facts": "Log returns of 4h closes per period; Hill tail index on the largest 5 % of losses and gains; Hurst exponent by DFA-1 with an iid shuffle range; permutation entropy of order 4; MRW intermittency from the log-covariance of absolute returns.",
-  "null_models": "H1's exact rules (sq.research.breakout, verified against the record; StoplossGuard modelled, MaxDrawdown protection not) replayed on surrogates of the window's own candles (5-day block shuffle; IAAFT) and on paths from models fitted to the window (GBM; GARCH(1,1)-t with zero drift and with the window's sample-mean drift; MRW), with intrabar wicks resampled from the real candles and the same warm-up the real run had. Shares are over all trials. A fixed stake can lose more than its notional, so returns below -100 % and drawdowns above 100 % occur on synthetic paths.",
-  "forward_calibration": "Models fitted to the full 2020-2026 history; 10-year paths; the window ends when the 30th trade closes; F3, P1 and P2 as in docs/forward-test.md, buy-and-hold on the forward report's basis. share_go under a zero-drift model is the protocol's false-GO rate; under the drifted model it is the pass rate in a rising market without timing skill.",
-  "first_passage": "Probability that a driftless Brownian log price with the window's volatility crosses the -20 % stop within a horizon: closed form against simulated 4h paths.",
-  "growth": "Time-average (log) growth against the ensemble mean per trade; Kelly fraction capped at 1 (no leverage) with a trade bootstrap; compounding frontier on the daily marks.",
-  "ledger": "Deflated Sharpe ratio (Bailey and Lopez de Prado 2014) for the number of counted trials in research/ledger.json."
+  "stylized_facts": "Log returns of 4h closes; Hill tails, DFA-1 and order-4 permutation entropy with shuffle ranges, log-absolute-return covariance. These diagnostics do not establish or exclude exploitable predictability.",
+  "null_models": "Historical H1 replay with CooldownPeriod, StoplossGuard and default ratios-mode MaxDrawdown (absolute cumulative return-ratio drop >0.25 over 540 candles). Block shuffle and approximate-spectrum IAAFT; fitted GBM, GARCH-t and MRW LOG-return models, with resampled independent intrabar wicks. Zero log drift does not imply zero expected price return. These are model-conditioned descriptive comparisons. Fixed stakes can lose more than their notional on synthetic paths.",
+  "forward_calibration": "Models fitted to full 2020-2026 history; 10-year paths. Completion and P1/P2 pass shares require 30 closed trades without an F3 breach. Years to completion are conditional on surviving F3; *_ignoring_f3 and trades_per_year continue despite STOP. Shares use all trials. GO is model-conditioned, not a demonstrated false-positive rate. All three protections are replayed; F1/F2 operational failures are not simulated.",
+  "first_passage": "Brownian log price with zero log drift and held-out volatility: continuous reflection-principle probability, discrete 4h-close monitoring, and continuous Brownian-bridge estimator with Monte Carlo standard error. Not H1's conditional stop risk.",
+  "growth": "Empirical log growth; volatility drag is ln(1+mean(r))-mean(ln(1+r)). The arithmetic/log gap is separate. Kelly capped at 1, wider search capped at 5; IID trade bootstrap. Frontier synthetically compounds daily fixed-notional P&L, not H1 fills.",
+  "ledger": "DSR is unavailable for missing or cross-period trial Sharpes. A raw evaluation count is not an effective independent-trial estimate; the asymptotic formula does not correct serial dependence or give a posterior probability of an edge."
  },
  "stylized_facts": {
   "train": {
@@ -211,49 +211,51 @@
     "net_return_pct": 39.8114,
     "mtm_max_drawdown_pct": 30.3766,
     "trades": 14,
-    "stop_exits": 0
+    "stop_exits": 0,
+    "max_drawdown_locks": 0
    },
    "trials": 1000,
    "block_candles": 30,
    "models": {
     "block_shuffle": {
      "label": "Block shuffle of the real candles",
-     "share_return_ge": 0.095,
+     "share_return_ge": 0.092,
      "share_drawdown_le": 0.243,
      "share_both": 0.072,
      "return_pct": {
-      "p5": -63.1013,
-      "p50": -3.6512,
+      "p5": -65.9127,
+      "p50": -4.0203,
       "p95": 50.3315
      },
      "drawdown_pct": {
       "p5": 21.4632,
-      "p50": 39.962,
-      "p95": 76.0865
+      "p50": 39.7956,
+      "p95": 76.6827
      },
      "trades": {
       "p5": 13.0,
-      "p50": 16.0,
+      "p50": 15.0,
       "p95": 19.0
      },
      "share_paths_with_stop_exit": 0.01,
+     "share_paths_with_max_drawdown_lock": 0.333,
      "fit": null,
-     "prefix_sha256": "31f1773a52434bc9a992298b2b46ebadefcda08b4bc48754fe4155062d3d015e"
+     "prefix_sha256": "e584816fb950ecc09c1b4e2c594a6c96cab29a3f380d0cfe93f3d745d532caea"
     },
     "iaaft": {
      "label": "IAAFT surrogate of the real returns",
-     "share_return_ge": 0.164,
-     "share_drawdown_le": 0.351,
+     "share_return_ge": 0.163,
+     "share_drawdown_le": 0.355,
      "share_both": 0.121,
      "return_pct": {
-      "p5": -23.0551,
-      "p50": 17.819,
+      "p5": -25.4998,
+      "p50": 17.8879,
       "p95": 54.9079
      },
      "drawdown_pct": {
       "p5": 20.4934,
-      "p50": 34.5877,
-      "p95": 60.7045
+      "p50": 34.4321,
+      "p95": 60.0587
      },
      "trades": {
       "p5": 11.0,
@@ -261,23 +263,24 @@
       "p95": 17.0
      },
      "share_paths_with_stop_exit": 0.0,
+     "share_paths_with_max_drawdown_lock": 0.231,
      "fit": null,
-     "prefix_sha256": "91e2ed8354ce8e4aed13b8d89ae9f4be3e65ab3ddcaee3748d0d5b308fd5253a"
+     "prefix_sha256": "76c258dd278856c39a63ca3225b15f88a298384160e1de2c948dae0d0d02ab68"
     },
     "gbm_zero_drift": {
-     "label": "Geometric Brownian motion, zero drift",
+     "label": "Geometric Brownian motion, zero log drift",
      "share_return_ge": 0.163,
-     "share_drawdown_le": 0.234,
+     "share_drawdown_le": 0.233,
      "share_both": 0.117,
      "return_pct": {
-      "p5": -74.1876,
-      "p50": -7.1292,
-      "p95": 77.8591
+      "p5": -72.9574,
+      "p50": -7.3238,
+      "p95": 76.8905
      },
      "drawdown_pct": {
-      "p5": 22.1741,
-      "p50": 42.7051,
-      "p95": 83.6029
+      "p5": 22.3183,
+      "p50": 42.8726,
+      "p95": 83.2034
      },
      "trades": {
       "p5": 11.0,
@@ -285,33 +288,35 @@
       "p95": 19.0
      },
      "share_paths_with_stop_exit": 0.001,
+     "share_paths_with_max_drawdown_lock": 0.349,
      "fit": {
       "mu": 3.88667e-05,
       "sigma": 0.00977754
      },
-     "prefix_sha256": "bdac76313bd787477ea8d865b1e48c2abe6da720537fb65c83494f789ee648e0"
+     "prefix_sha256": "7e8b0db819b5a61e8640a8e7ea0a8a0446bd04320f54ab6bbbd6507f27a60e0c"
     },
     "garch_t_zero_drift": {
-     "label": "GARCH(1,1)-t, zero drift",
-     "share_return_ge": 0.261,
-     "share_drawdown_le": 0.113,
+     "label": "GARCH(1,1)-t, zero log drift",
+     "share_return_ge": 0.249,
+     "share_drawdown_le": 0.115,
      "share_both": 0.089,
      "return_pct": {
-      "p5": -95.003,
-      "p50": -7.5211,
-      "p95": 152.2194
+      "p5": -90.6462,
+      "p50": -8.2781,
+      "p95": 142.707
      },
      "drawdown_pct": {
-      "p5": 25.1947,
-      "p50": 54.238,
-      "p95": 105.5364
+      "p5": 24.9449,
+      "p50": 53.5042,
+      "p95": 100.6887
      },
      "trades": {
       "p5": 12.0,
-      "p50": 16.0,
-      "p95": 20.0
+      "p50": 15.0,
+      "p95": 19.0
      },
-     "share_paths_with_stop_exit": 0.378,
+     "share_paths_with_stop_exit": 0.355,
+     "share_paths_with_max_drawdown_lock": 0.671,
      "fit": {
       "mu": 0.00015899,
       "mean": 3.88667e-05,
@@ -322,29 +327,30 @@
       "loglik": 16452.9,
       "persistence": 0.981535
      },
-     "prefix_sha256": "69605bf059147d22c20e2ab626ef740f5c9068b785e7c9cb5ba253de3c5eb3e2"
+     "prefix_sha256": "47e9e41b421473ec001035602a531c5ab0969da1306d3556870aa96672c6aa03"
     },
     "garch_t_drift": {
-     "label": "GARCH(1,1)-t, with the window's mean drift",
-     "share_return_ge": 0.331,
-     "share_drawdown_le": 0.143,
-     "share_both": 0.114,
+     "label": "GARCH(1,1)-t, with the window's mean log drift",
+     "share_return_ge": 0.322,
+     "share_drawdown_le": 0.152,
+     "share_both": 0.119,
      "return_pct": {
-      "p5": -85.9175,
-      "p50": 5.3816,
-      "p95": 194.3896
+      "p5": -87.5364,
+      "p50": 3.7612,
+      "p95": 178.3748
      },
      "drawdown_pct": {
-      "p5": 23.6596,
-      "p50": 49.8889,
-      "p95": 101.5431
+      "p5": 23.5448,
+      "p50": 49.1093,
+      "p95": 97.6481
      },
      "trades": {
       "p5": 12.0,
-      "p50": 16.0,
-      "p95": 20.0
+      "p50": 15.0,
+      "p95": 19.0
      },
-     "share_paths_with_stop_exit": 0.376,
+     "share_paths_with_stop_exit": 0.357,
+     "share_paths_with_max_drawdown_lock": 0.657,
      "fit": {
       "mu": 0.00015899,
       "mean": 3.88667e-05,
@@ -355,35 +361,36 @@
       "loglik": 16452.9,
       "persistence": 0.981535
      },
-     "prefix_sha256": "e1c1341253f6f6221e0f26f213309b1f0bde8fe6bec4948f500e74cf30207fa0"
+     "prefix_sha256": "13477fe7769774406e73a4a776cd7478d64681364b675cf9da11c8854c350276"
     },
     "mrw_zero_drift": {
-     "label": "Multifractal random walk, zero drift",
-     "share_return_ge": 0.188,
-     "share_drawdown_le": 0.215,
-     "share_both": 0.13,
+     "label": "Multifractal random walk, zero log drift",
+     "share_return_ge": 0.186,
+     "share_drawdown_le": 0.218,
+     "share_both": 0.132,
      "return_pct": {
-      "p5": -71.8603,
-      "p50": -5.3853,
+      "p5": -70.4487,
+      "p50": -5.5373,
       "p95": 79.8117
      },
      "drawdown_pct": {
       "p5": 21.5512,
-      "p50": 42.5123,
-      "p95": 82.1691
+      "p50": 42.2012,
+      "p95": 80.8163
      },
      "trades": {
       "p5": 11.0,
       "p50": 15.0,
-      "p95": 19.0
+      "p95": 18.0
      },
      "share_paths_with_stop_exit": 0.008,
+     "share_paths_with_max_drawdown_lock": 0.379,
      "fit": {
       "sigma": 0.00977754,
       "lambda2": 0.0425709,
       "integral_scale": 135.871
      },
-     "prefix_sha256": "a4fb08ace83742575b226bccca49b84017a895f645d368e164ecc72b2921fbde"
+     "prefix_sha256": "df1df0a0733d3ba8ebd85618fdd641156b5d46422c1d4afbf2456a60d9a00dfb"
     }
    }
   },
@@ -392,73 +399,76 @@
     "net_return_pct": 67.2112,
     "mtm_max_drawdown_pct": 20.6281,
     "trades": 11,
-    "stop_exits": 0
+    "stop_exits": 0,
+    "max_drawdown_locks": 0
    },
    "trials": 1000,
    "block_candles": 30,
    "models": {
     "block_shuffle": {
      "label": "Block shuffle of the real candles",
-     "share_return_ge": 0.552,
+     "share_return_ge": 0.548,
      "share_drawdown_le": 0.488,
-     "share_both": 0.356,
+     "share_both": 0.354,
      "return_pct": {
-      "p5": 18.4063,
+      "p5": 17.3933,
       "p50": 71.9965,
-      "p95": 135.3008
+      "p95": 135.2837
      },
      "drawdown_pct": {
       "p5": 12.7987,
       "p50": 20.8658,
-      "p95": 37.7908
+      "p95": 37.5165
      },
      "trades": {
       "p5": 8.0,
       "p50": 10.0,
-      "p95": 14.0
+      "p95": 13.0
      },
      "share_paths_with_stop_exit": 0.002,
+     "share_paths_with_max_drawdown_lock": 0.094,
      "fit": null,
-     "prefix_sha256": "c236d89f48875aab094936cf0ba1830cccd6de679f48c577dae3b31dd47e36fd"
+     "prefix_sha256": "98b8858cab55d24ed82fae7708e0ba578853ddd9d0a64eb4c54ac797de4928f6"
     },
     "iaaft": {
      "label": "IAAFT surrogate of the real returns",
-     "share_return_ge": 0.468,
-     "share_drawdown_le": 0.321,
-     "share_both": 0.23,
+     "share_return_ge": 0.46,
+     "share_drawdown_le": 0.324,
+     "share_both": 0.233,
      "return_pct": {
-      "p5": 24.5737,
-      "p50": 65.4784,
-      "p95": 104.4506
+      "p5": 23.7694,
+      "p50": 64.8897,
+      "p95": 104.2443
      },
      "drawdown_pct": {
       "p5": 14.4971,
-      "p50": 23.2541,
-      "p95": 38.6749
+      "p50": 23.2013,
+      "p95": 38.4829
      },
      "trades": {
       "p5": 8.0,
       "p50": 11.0,
-      "p95": 14.0
+      "p95": 13.0
      },
      "share_paths_with_stop_exit": 0.002,
+     "share_paths_with_max_drawdown_lock": 0.154,
      "fit": null,
-     "prefix_sha256": "076e4a43d2fd71d1ac4d71160844bb75683998769597b1c839ba764786aff90e"
+     "prefix_sha256": "d1f6f4610db1d83bc693d95032044f59f8034fde017d5fb2cb3c789975ea3c15"
     },
     "gbm_zero_drift": {
-     "label": "Geometric Brownian motion, zero drift",
+     "label": "Geometric Brownian motion, zero log drift",
      "share_return_ge": 0.04,
      "share_drawdown_le": 0.098,
      "share_both": 0.024,
      "return_pct": {
-      "p5": -60.1467,
-      "p50": -6.8652,
+      "p5": -59.9384,
+      "p50": -6.8074,
       "p95": 63.7365
      },
      "drawdown_pct": {
       "p5": 18.511,
-      "p50": 35.3227,
-      "p95": 68.3505
+      "p50": 35.2696,
+      "p95": 66.7576
      },
      "trades": {
       "p5": 7.0,
@@ -466,33 +476,69 @@
       "p95": 13.0
      },
      "share_paths_with_stop_exit": 0.0,
+     "share_paths_with_max_drawdown_lock": 0.245,
      "fit": {
       "mu": 0.000405885,
       "sigma": 0.00973327
      },
-     "prefix_sha256": "8fade6e8c06836b52a0ccd933efc674db03490f9d1e51291b84578316b251856"
+     "prefix_sha256": "ae788255294c864345aedea8714227247c1b169b5c677ba112c03aae6bfdfc19"
     },
     "garch_t_zero_drift": {
-     "label": "GARCH(1,1)-t, zero drift",
-     "share_return_ge": 0.103,
-     "share_drawdown_le": 0.068,
-     "share_both": 0.022,
+     "label": "GARCH(1,1)-t, zero log drift",
+     "share_return_ge": 0.102,
+     "share_drawdown_le": 0.067,
+     "share_both": 0.021,
      "return_pct": {
-      "p5": -72.5851,
-      "p50": -5.951,
-      "p95": 110.6501
+      "p5": -69.8835,
+      "p50": -5.4939,
+      "p95": 110.6904
      },
      "drawdown_pct": {
       "p5": 19.6951,
-      "p50": 41.3371,
-      "p95": 82.4391
+      "p50": 40.087,
+      "p95": 78.9782
+     },
+     "trades": {
+      "p5": 7.0,
+      "p50": 10.0,
+      "p95": 12.0
+     },
+     "share_paths_with_stop_exit": 0.252,
+     "share_paths_with_max_drawdown_lock": 0.434,
+     "fit": {
+      "mu": 0.000231226,
+      "mean": 0.000405885,
+      "omega": 1.20939e-05,
+      "alpha": 0.281311,
+      "beta": 0.718589,
+      "nu": 2.59527,
+      "loglik": 11393.8,
+      "persistence": 0.9999
+     },
+     "prefix_sha256": "dee9b68848a32290dcf662db033e9a66859e363d38ba31a995b5c33854cb1a8f"
+    },
+    "garch_t_drift": {
+     "label": "GARCH(1,1)-t, with the window's mean log drift",
+     "share_return_ge": 0.579,
+     "share_drawdown_le": 0.285,
+     "share_both": 0.248,
+     "return_pct": {
+      "p5": -22.2961,
+      "p50": 79.6592,
+      "p95": 258.9695
+     },
+     "drawdown_pct": {
+      "p5": 13.4454,
+      "p50": 26.5473,
+      "p95": 57.6667
      },
      "trades": {
       "p5": 7.0,
       "p50": 10.0,
       "p95": 13.0
      },
-     "share_paths_with_stop_exit": 0.26,
+     "share_paths_with_stop_exit": 0.185,
+     "share_paths_with_max_drawdown_lock": 0.283,
      "fit": {
       "mu": 0.000231226,
       "mean": 0.000405885,
@@ -503,68 +549,36 @@
       "loglik": 11393.8,
       "persistence": 0.9999
      },
-     "prefix_sha256": "6ce5fd87da04d4c1b712517100dab770af12d0f8d1204e4f1ec2679612840102"
-    },
-    "garch_t_drift": {
-     "label": "GARCH(1,1)-t, with the window's mean drift",
-     "share_return_ge": 0.588,
-     "share_drawdown_le": 0.28,
-     "share_both": 0.243,
-     "return_pct": {
-      "p5": -22.269,
-      "p50": 81.7643,
-      "p95": 262.9802
-     },
-     "drawdown_pct": {
-      "p5": 13.437,
-      "p50": 26.6072,
-      "p95": 58.6961
-     },
-     "trades": {
-      "p5": 7.0,
-      "p50": 10.0,
-      "p95": 14.0
-     },
-     "share_paths_with_stop_exit": 0.19,
-     "fit": {
-      "mu": 0.000231226,
-      "mean": 0.000405885,
-      "omega": 1.20939e-05,
-      "alpha": 0.281311,
-      "beta": 0.718589,
-      "nu": 2.59527,
-      "loglik": 11393.8,
-      "persistence": 0.9999
-     },
-     "prefix_sha256": "13402ce524cb393d48acfcebc6e93b24be4f0d42593d1c90989bb3d1c3a467bc"
+     "prefix_sha256": "0be04d2f9e02a0158931dc914165d62f3193146197e4ccc1f251eb74726757d4"
     },
     "mrw_zero_drift": {
-     "label": "Multifractal random walk, zero drift",
+     "label": "Multifractal random walk, zero log drift",
      "share_return_ge": 0.055,
      "share_drawdown_le": 0.098,
      "share_both": 0.027,
      "return_pct": {
-      "p5": -57.4984,
-      "p50": -7.85,
+      "p5": -55.5834,
+      "p50": -7.9334,
       "p95": 68.8526
      },
      "drawdown_pct": {
       "p5": 18.0387,
       "p50": 35.274,
-      "p95": 66.1786
+      "p95": 65.9065
      },
      "trades": {
       "p5": 7.0,
       "p50": 10.0,
-      "p95": 13.0
+      "p95": 12.05
      },
-     "share_paths_with_stop_exit": 0.01,
+     "share_paths_with_stop_exit": 0.009,
+     "share_paths_with_max_drawdown_lock": 0.249,
      "fit": {
       "sigma": 0.00973327,
       "lambda2": 0.0372601,
       "integral_scale": 251.708
      },
-     "prefix_sha256": "75670e9f51771a5e039892ccca440b0469c8729d34c8fd2d0e6741fb40dfcb7c"
+     "prefix_sha256": "25a56d8273661eec654601e16c660b7a0eb49acfb072731eae2ea1e3b75f1434"
     }
    }
   },
@@ -573,107 +587,112 @@
     "net_return_pct": 140.6219,
     "mtm_max_drawdown_pct": 28.3671,
     "trades": 16,
-    "stop_exits": 0
+    "stop_exits": 0,
+    "max_drawdown_locks": 1
    },
    "trials": 1000,
    "block_candles": 30,
    "models": {
     "block_shuffle": {
      "label": "Block shuffle of the real candles",
-     "share_return_ge": 0.13,
-     "share_drawdown_le": 0.082,
-     "share_both": 0.039,
+     "share_return_ge": 0.128,
+     "share_drawdown_le": 0.087,
+     "share_both": 0.042,
      "return_pct": {
-      "p5": -45.6931,
-      "p50": 61.8618,
-      "p95": 177.9595
+      "p5": -50.1969,
+      "p50": 57.3666,
+      "p95": 180.7074
      },
      "drawdown_pct": {
-      "p5": 25.6193,
-      "p50": 48.3646,
-      "p95": 90.46
+      "p5": 25.2406,
+      "p50": 47.4245,
+      "p95": 92.2163
      },
      "trades": {
-      "p5": 16.95,
-      "p50": 20.0,
-      "p95": 24.0
+      "p5": 16.0,
+      "p50": 19.0,
+      "p95": 23.0
      },
-     "share_paths_with_stop_exit": 0.605,
+     "share_paths_with_stop_exit": 0.594,
+     "share_paths_with_max_drawdown_lock": 0.822,
      "fit": null,
-     "prefix_sha256": "9a15b3ca7c9889e894e7d1cf4256e7d3062e5fecafe80446c73035dc278ad946"
+     "prefix_sha256": "8d101165b80a4f16f19e93d5135ef3a9a5642ef374df610194f4f68a8144f4a4"
     },
     "iaaft": {
      "label": "IAAFT surrogate of the real returns",
-     "share_return_ge": 0.406,
-     "share_drawdown_le": 0.118,
-     "share_both": 0.089,
+     "share_return_ge": 0.392,
+     "share_drawdown_le": 0.127,
+     "share_both": 0.093,
      "return_pct": {
-      "p5": 29.4839,
-      "p50": 129.7859,
-      "p95": 235.2982
+      "p5": 12.2146,
+      "p50": 123.7844,
+      "p95": 231.4242
      },
      "drawdown_pct": {
-      "p5": 24.9525,
-      "p50": 44.5417,
-      "p95": 89.8422
+      "p5": 24.8498,
+      "p50": 44.127,
+      "p95": 85.7813
+     },
+     "trades": {
+      "p5": 15.0,
+      "p50": 18.0,
+      "p95": 21.0
+     },
+     "share_paths_with_stop_exit": 0.508,
+     "share_paths_with_max_drawdown_lock": 0.846,
+     "fit": null,
+     "prefix_sha256": "a2b8817635b9e683eccd056250bf628b8285b201a02b9715194045df99a7407c"
+    },
+    "gbm_zero_drift": {
+     "label": "Geometric Brownian motion, zero log drift",
+     "share_return_ge": 0.067,
+     "share_drawdown_le": 0.026,
+     "share_both": 0.018,
+     "return_pct": {
+      "p5": -121.3707,
+      "p50": 1.1323,
+      "p95": 162.8435
+     },
+     "drawdown_pct": {
+      "p5": 31.2277,
+      "p50": 62.7562,
+      "p95": 130.7174
      },
      "trades": {
       "p5": 15.0,
       "p50": 18.0,
       "p95": 22.0
      },
-     "share_paths_with_stop_exit": 0.524,
-     "fit": null,
-     "prefix_sha256": "35c1495bd4d3936f75efe45ae53376651095fa029b182516c870352b57bcaa0d"
-    },
-    "gbm_zero_drift": {
-     "label": "Geometric Brownian motion, zero drift",
-     "share_return_ge": 0.068,
-     "share_drawdown_le": 0.028,
-     "share_both": 0.02,
-     "return_pct": {
-      "p5": -128.1733,
-      "p50": 1.2146,
-      "p95": 162.1644
-     },
-     "drawdown_pct": {
-      "p5": 31.2302,
-      "p50": 64.1505,
-      "p95": 135.2785
-     },
-     "trades": {
-      "p5": 15.0,
-      "p50": 20.0,
-      "p95": 24.0
-     },
-     "share_paths_with_stop_exit": 0.461,
+     "share_paths_with_stop_exit": 0.438,
+     "share_paths_with_max_drawdown_lock": 0.907,
      "fit": {
       "mu": 0.000137835,
       "sigma": 0.0153985
      },
-     "prefix_sha256": "d5a56058726557f5b7aa839a5d8774edd5f5d04bc1b6c2da6c84d391c6cc4bc4"
+     "prefix_sha256": "563fb15465993826bb4b5f596369423700054672c3487812f4a39d71668708c6"
     },
     "garch_t_zero_drift": {
-     "label": "GARCH(1,1)-t, zero drift",
-     "share_return_ge": 0.096,
-     "share_drawdown_le": 0.063,
+     "label": "GARCH(1,1)-t, zero log drift",
+     "share_return_ge": 0.085,
+     "share_drawdown_le": 0.064,
      "share_both": 0.016,
      "return_pct": {
-      "p5": -118.8724,
-      "p50": -9.6683,
-      "p95": 203.1075
+      "p5": -108.3946,
+      "p50": -9.8785,
+      "p95": 179.4374
      },
      "drawdown_pct": {
       "p5": 27.0181,
-      "p50": 59.083,
-      "p95": 123.2368
+      "p50": 58.61,
+      "p95": 118.4076
      },
      "trades": {
       "p5": 10.0,
       "p50": 14.0,
-      "p95": 19.0
+      "p95": 17.0
      },
-     "share_paths_with_stop_exit": 0.644,
+     "share_paths_with_stop_exit": 0.629,
+     "share_paths_with_max_drawdown_lock": 0.716,
      "fit": {
       "mu": 0.000185601,
       "mean": 0.000137835,
@@ -684,29 +703,30 @@
       "loglik": 19794.8,
       "persistence": 0.9999
      },
-     "prefix_sha256": "1fccd5e2f063c0b3afe6f0a822533df963bf2c41be845a1444499589669d0ef4"
+     "prefix_sha256": "29cc877b7b61984a9a0baaafc414454208bb4302e7401ae42a9b92073914cbb4"
     },
     "garch_t_drift": {
-     "label": "GARCH(1,1)-t, with the window's mean drift",
-     "share_return_ge": 0.162,
-     "share_drawdown_le": 0.128,
-     "share_both": 0.048,
+     "label": "GARCH(1,1)-t, with the window's mean log drift",
+     "share_return_ge": 0.155,
+     "share_drawdown_le": 0.131,
+     "share_both": 0.049,
      "return_pct": {
-      "p5": -88.0641,
-      "p50": 38.2896,
-      "p95": 290.1169
+      "p5": -81.4884,
+      "p50": 33.1279,
+      "p95": 271.0046
      },
      "drawdown_pct": {
-      "p5": 22.2499,
-      "p50": 49.0204,
-      "p95": 105.5967
+      "p5": 22.0586,
+      "p50": 47.906,
+      "p95": 101.6855
      },
      "trades": {
       "p5": 10.0,
       "p50": 14.0,
-      "p95": 19.0
+      "p95": 18.0
      },
-     "share_paths_with_stop_exit": 0.619,
+     "share_paths_with_stop_exit": 0.612,
+     "share_paths_with_max_drawdown_lock": 0.647,
      "fit": {
       "mu": 0.000185601,
       "mean": 0.000137835,
@@ -717,35 +737,36 @@
       "loglik": 19794.8,
       "persistence": 0.9999
      },
-     "prefix_sha256": "b48bd47c2c72746a15522c19cd4fa91118575e9c5934ec506214fd324cb5259e"
+     "prefix_sha256": "d25b6a7a305e0cc6a51f7a989d9a05f71f736e07c30dc8d937f83aa6c1da967e"
     },
     "mrw_zero_drift": {
-     "label": "Multifractal random walk, zero drift",
-     "share_return_ge": 0.106,
-     "share_drawdown_le": 0.026,
-     "share_both": 0.01,
+     "label": "Multifractal random walk, zero log drift",
+     "share_return_ge": 0.097,
+     "share_drawdown_le": 0.033,
+     "share_both": 0.015,
      "return_pct": {
-      "p5": -122.4081,
-      "p50": 1.3664,
-      "p95": 191.6372
+      "p5": -122.4569,
+      "p50": -0.7124,
+      "p95": 192.0691
      },
      "drawdown_pct": {
-      "p5": 30.8722,
-      "p50": 63.6527,
-      "p95": 140.0731
+      "p5": 30.3591,
+      "p50": 62.4453,
+      "p95": 130.6365
      },
      "trades": {
       "p5": 13.0,
-      "p50": 18.0,
-      "p95": 23.0
+      "p50": 17.0,
+      "p95": 21.0
      },
-     "share_paths_with_stop_exit": 0.654,
+     "share_paths_with_stop_exit": 0.636,
+     "share_paths_with_max_drawdown_lock": 0.877,
      "fit": {
       "sigma": 0.0153985,
       "lambda2": 0.0436715,
       "integral_scale": 1678.31
      },
-     "prefix_sha256": "c355c8851b8f3322f726dd57fb87540d390bbef6c581e847fb2893acfd09a026"
+     "prefix_sha256": "9824011618443ef63808b1d96f0aa2e4cee3945eaff8513576b54774e1598032"
     }
    }
   }
@@ -762,49 +783,101 @@
   },
   "models": {
    "gbm_zero_drift": {
-    "label": "Geometric Brownian motion, zero drift",
+    "label": "Geometric Brownian motion, zero log drift",
     "trials": 1000,
-    "share_reached_required_trades": 1.0,
+    "share_reached_required_trades": 0.047,
     "years_to_required_trades": {
-     "p5": 3.7807,
-     "p50": 4.5284,
-     "p95": 5.3718
+     "p5": 4.1777,
+     "p50": 4.9744,
+     "p95": 5.9169
+    },
+    "share_reached_ignoring_f3": 1.0,
+    "years_to_required_trades_ignoring_f3": {
+     "p5": 3.9332,
+     "p50": 4.6929,
+     "p95": 5.5161
     },
     "trades_per_year": {
-     "p5": 5.8,
-     "p50": 6.6,
-     "p95": 7.3
+     "p5": 5.7,
+     "p50": 6.3,
+     "p95": 7.0
     },
-    "share_f3_stop": 0.952,
-    "share_p1_pass": 0.463,
-    "share_p2_pass": 0.182,
-    "share_go": 0.048,
-    "share_paths_with_stop_exit": 0.5,
+    "share_f3_stop": 0.953,
+    "share_p1_pass": 0.047,
+    "share_p2_pass": 0.047,
+    "share_go": 0.047,
+    "share_paths_with_stop_exit": 0.487,
+    "share_paths_with_max_drawdown_lock": 0.993,
     "fit": {
      "mu": 0.000163689,
      "sigma": 0.0125803
     },
-    "prefix_sha256": "463ffad30783575908283e02dde6421af8980ced063692eadeb45e7aea415c1f"
+    "prefix_sha256": "2b1479c23a91463a75dbf1c8bc831d847c973e351eebd9f85458522ddc828ccf"
    },
    "garch_t_zero_drift": {
-    "label": "GARCH(1,1)-t, zero drift",
+    "label": "GARCH(1,1)-t, zero log drift",
     "trials": 1000,
-    "share_reached_required_trades": 1.0,
+    "share_reached_required_trades": 0.019,
     "years_to_required_trades": {
-     "p5": 4.3804,
-     "p50": 5.2936,
-     "p95": 6.3502
+     "p5": 5.4124,
+     "p50": 5.7959,
+     "p95": 6.3602
+    },
+    "share_reached_ignoring_f3": 1.0,
+    "years_to_required_trades_ignoring_f3": {
+     "p5": 4.6281,
+     "p50": 5.4696,
+     "p95": 6.5155
+    },
+    "trades_per_year": {
+     "p5": 4.7,
+     "p50": 5.4,
+     "p95": 6.1
+    },
+    "share_f3_stop": 0.981,
+    "share_p1_pass": 0.019,
+    "share_p2_pass": 0.018,
+    "share_go": 0.018,
+    "share_paths_with_stop_exit": 0.92,
+    "share_paths_with_max_drawdown_lock": 0.988,
+    "fit": {
+     "mu": 0.000195719,
+     "mean": 0.000163689,
+     "omega": 1.11099e-06,
+     "alpha": 0.0643862,
+     "beta": 0.935514,
+     "nu": 3.09236,
+     "loglik": 47661.9,
+     "persistence": 0.9999
+    },
+    "prefix_sha256": "10ca6a37aaa49c6bc8d33f5ce9be4d24a112116ff4b99d4b8d4a686cf76f1a97"
+   },
+   "garch_t_drift": {
+    "label": "GARCH(1,1)-t, with the window's mean log drift",
+    "trials": 1000,
+    "share_reached_required_trades": 0.137,
+    "years_to_required_trades": {
+     "p5": 4.7987,
+     "p50": 5.6123,
+     "p95": 6.4448
+    },
+    "share_reached_ignoring_f3": 1.0,
+    "years_to_required_trades_ignoring_f3": {
+     "p5": 4.3892,
+     "p50": 5.2276,
+     "p95": 6.2037
     },
     "trades_per_year": {
      "p5": 4.9,
-     "p50": 5.6,
-     "p95": 6.4
+     "p50": 5.7,
+     "p95": 6.3
     },
-    "share_f3_stop": 0.981,
-    "share_p1_pass": 0.506,
-    "share_p2_pass": 0.129,
-    "share_go": 0.018,
-    "share_paths_with_stop_exit": 0.928,
+    "share_f3_stop": 0.863,
+    "share_p1_pass": 0.137,
+    "share_p2_pass": 0.125,
+    "share_go": 0.125,
+    "share_paths_with_stop_exit": 0.92,
+    "share_paths_with_max_drawdown_lock": 0.978,
     "fit": {
      "mu": 0.000195719,
      "mean": 0.000163689,
@@ -815,64 +888,40 @@
      "loglik": 47661.9,
      "persistence": 0.9999
     },
-    "prefix_sha256": "1a9df7447b09b6ad64e32f17120851016fc7ce39a354355b5308d52876e7f79a"
-   },
-   "garch_t_drift": {
-    "label": "GARCH(1,1)-t, with the window's mean drift",
-    "trials": 1000,
-    "share_reached_required_trades": 1.0,
-    "years_to_required_trades": {
-     "p5": 4.2047,
-     "p50": 5.1047,
-     "p95": 6.155
-    },
-    "trades_per_year": {
-     "p5": 5.0,
-     "p50": 5.8,
-     "p95": 6.6
-    },
-    "share_f3_stop": 0.867,
-    "share_p1_pass": 0.809,
-    "share_p2_pass": 0.303,
-    "share_go": 0.122,
-    "share_paths_with_stop_exit": 0.929,
-    "fit": {
-     "mu": 0.000195719,
-     "mean": 0.000163689,
-     "omega": 1.11099e-06,
-     "alpha": 0.0643862,
-     "beta": 0.935514,
-     "nu": 3.09236,
-     "loglik": 47661.9,
-     "persistence": 0.9999
-    },
-    "prefix_sha256": "8169131c3451e4fa2eeaceec6fd8e0a6f12df2e114c20089842e0d30f98b390d"
+    "prefix_sha256": "a5ef8a6adabe0ffe2b65259a4ec077f2e7312f5db47f87ee02a2ff8577523f76"
    },
    "mrw_zero_drift": {
-    "label": "Multifractal random walk, zero drift",
+    "label": "Multifractal random walk, zero log drift",
     "trials": 1000,
-    "share_reached_required_trades": 1.0,
+    "share_reached_required_trades": 0.035,
     "years_to_required_trades": {
-     "p5": 4.03,
-     "p50": 4.8693,
-     "p95": 5.8815
+     "p5": 4.7176,
+     "p50": 5.3461,
+     "p95": 6.4679
+    },
+    "share_reached_ignoring_f3": 1.0,
+    "years_to_required_trades_ignoring_f3": {
+     "p5": 4.2322,
+     "p50": 5.0397,
+     "p95": 6.0249
     },
     "trades_per_year": {
-     "p5": 5.2,
-     "p50": 6.1,
-     "p95": 6.9
+     "p5": 5.1,
+     "p50": 5.9,
+     "p95": 6.6
     },
-    "share_f3_stop": 0.968,
-    "share_p1_pass": 0.452,
-    "share_p2_pass": 0.159,
-    "share_go": 0.032,
-    "share_paths_with_stop_exit": 0.776,
+    "share_f3_stop": 0.965,
+    "share_p1_pass": 0.035,
+    "share_p2_pass": 0.035,
+    "share_go": 0.035,
+    "share_paths_with_stop_exit": 0.753,
+    "share_paths_with_max_drawdown_lock": 0.99,
     "fit": {
      "sigma": 0.0125803,
      "lambda2": 0.0409733,
      "integral_scale": 1539.65
     },
-    "prefix_sha256": "51658a61529790cf87cdbaef66564d93068623399b3d8189483b37a20acccdf4"
+    "prefix_sha256": "a2442056610690c6d69cb74abf3ee9cf216673cfe76354a3f5a642782c975ea4"
    }
   }
  },
@@ -891,6 +940,18 @@
    "30": 0.0803,
    "60": 0.2167
   },
+  "bridge_continuous": {
+   "7": 0.0005,
+   "14": 0.0127,
+   "30": 0.0887,
+   "60": 0.2288
+  },
+  "bridge_standard_error": {
+   "7": 0.0001,
+   "14": 0.0008,
+   "30": 0.002,
+   "60": 0.0029
+  },
   "trials": 20000,
   "observed_median_holding_days": 15.75
  },
@@ -900,12 +961,15 @@
     "n": 16,
     "mean_pct": 8.745,
     "time_average_growth_pct": 6.1012,
-    "volatility_drag_pct": 2.6438,
+    "ensemble_log_growth_pct": 8.3836,
+    "arithmetic_log_gap_pct": 2.6438,
+    "volatility_drag_pct": 2.2823,
     "kelly": {
      "n": 16,
      "resamples": 10000,
      "seed": 20260924,
      "f_max": 1.0,
+     "wider_search_f_max": 5.0,
      "kelly_fraction": 1.0,
      "kelly_fraction_unconstrained": 2.55,
      "kelly_ci95": [
@@ -923,10 +987,12 @@
    },
    "daily_level": {
     "days": 1093,
-    "years": 2.9973,
+    "years": 2.9945,
     "annualised_mean_pct": 33.584,
     "annualised_growth_pct": 29.3232,
-    "volatility_drag_pct": 4.2608
+    "ensemble_log_growth_pct": 33.5685,
+    "arithmetic_log_gap_pct": 4.2608,
+    "volatility_drag_pct": 4.2453
    },
    "frontier": [
     {
@@ -961,12 +1027,15 @@
     "n": 16,
     "mean_pct": 7.6656,
     "time_average_growth_pct": 5.1038,
-    "volatility_drag_pct": 2.5618,
+    "ensemble_log_growth_pct": 7.386,
+    "arithmetic_log_gap_pct": 2.5618,
+    "volatility_drag_pct": 2.2822,
     "kelly": {
      "n": 16,
      "resamples": 10000,
      "seed": 20260924,
      "f_max": 1.0,
+     "wider_search_f_max": 5.0,
      "kelly_fraction": 1.0,
      "kelly_fraction_unconstrained": 2.1,
      "kelly_ci95": [
@@ -984,10 +1053,12 @@
    },
    "daily_level": {
     "days": 1093,
-    "years": 2.9973,
+    "years": 2.9945,
     "annualised_mean_pct": 31.3901,
     "annualised_growth_pct": 26.9086,
-    "volatility_drag_pct": 4.4815
+    "ensemble_log_growth_pct": 31.3766,
+    "arithmetic_log_gap_pct": 4.4815,
+    "volatility_drag_pct": 4.468
    },
    "frontier": [
     {
@@ -1022,12 +1093,15 @@
     "n": 11,
     "mean_pct": 6.0791,
     "time_average_growth_pct": 4.5446,
-    "volatility_drag_pct": 1.5345,
+    "ensemble_log_growth_pct": 5.9015,
+    "arithmetic_log_gap_pct": 1.5345,
+    "volatility_drag_pct": 1.3569,
     "kelly": {
      "n": 11,
      "resamples": 10000,
      "seed": 20260924,
      "f_max": 1.0,
+     "wider_search_f_max": 5.0,
      "kelly_fraction": 1.0,
      "kelly_fraction_unconstrained": 2.6625,
      "kelly_ci95": [
@@ -1045,10 +1119,12 @@
    },
    "daily_level": {
     "days": 546,
-    "years": 1.4986,
+    "years": 1.4959,
     "annualised_mean_pct": 38.8587,
     "annualised_growth_pct": 34.3634,
-    "volatility_drag_pct": 4.4953
+    "ensemble_log_growth_pct": 38.838,
+    "arithmetic_log_gap_pct": 4.4953,
+    "volatility_drag_pct": 4.4746
    },
    "frontier": [
     {
@@ -1083,12 +1159,15 @@
     "n": 11,
     "mean_pct": 5.0236,
     "time_average_growth_pct": 3.5445,
-    "volatility_drag_pct": 1.4791,
+    "ensemble_log_growth_pct": 4.9015,
+    "arithmetic_log_gap_pct": 1.4791,
+    "volatility_drag_pct": 1.357,
     "kelly": {
      "n": 11,
      "resamples": 10000,
      "seed": 20260924,
      "f_max": 1.0,
+     "wider_search_f_max": 5.0,
      "kelly_fraction": 1.0,
      "kelly_fraction_unconstrained": 2.1,
      "kelly_ci95": [
@@ -1106,10 +1185,12 @@
    },
    "daily_level": {
     "days": 546,
-    "years": 1.4986,
+    "years": 1.4959,
     "annualised_mean_pct": 34.5945,
     "annualised_growth_pct": 29.6461,
-    "volatility_drag_pct": 4.9484
+    "ensemble_log_growth_pct": 34.5781,
+    "arithmetic_log_gap_pct": 4.9484,
+    "volatility_drag_pct": 4.932
    },
    "frontier": [
     {
@@ -1144,12 +1225,15 @@
     "n": 14,
     "mean_pct": 2.83,
     "time_average_growth_pct": 2.0026,
-    "volatility_drag_pct": 0.8274,
+    "ensemble_log_growth_pct": 2.7907,
+    "arithmetic_log_gap_pct": 0.8274,
+    "volatility_drag_pct": 0.7881,
     "kelly": {
      "n": 14,
      "resamples": 10000,
      "seed": 20260924,
      "f_max": 1.0,
+     "wider_search_f_max": 5.0,
      "kelly_fraction": 1.0,
      "kelly_fraction_unconstrained": 2.4125,
      "kelly_ci95": [
@@ -1167,10 +1251,12 @@
    },
    "daily_level": {
     "days": 810,
-    "years": 2.2219,
+    "years": 2.2192,
     "annualised_mean_pct": 17.6512,
     "annualised_growth_pct": 15.1015,
-    "volatility_drag_pct": 2.5497
+    "ensemble_log_growth_pct": 17.6469,
+    "arithmetic_log_gap_pct": 2.5497,
+    "volatility_drag_pct": 2.5455
    },
    "frontier": [
     {
@@ -1205,12 +1291,15 @@
     "n": 14,
     "mean_pct": 1.8064,
     "time_average_growth_pct": 1.0024,
-    "volatility_drag_pct": 0.804,
+    "ensemble_log_growth_pct": 1.7903,
+    "arithmetic_log_gap_pct": 0.804,
+    "volatility_drag_pct": 0.7879,
     "kelly": {
      "n": 14,
      "resamples": 10000,
      "seed": 20260924,
      "f_max": 1.0,
+     "wider_search_f_max": 5.0,
      "kelly_fraction": 1.0,
      "kelly_fraction_unconstrained": 1.2875,
      "kelly_ci95": [
@@ -1228,10 +1317,12 @@
    },
    "daily_level": {
     "days": 810,
-    "years": 2.2219,
+    "years": 2.2192,
     "annualised_mean_pct": 13.105,
     "annualised_growth_pct": 10.2516,
-    "volatility_drag_pct": 2.8534
+    "ensemble_log_growth_pct": 13.1027,
+    "arithmetic_log_gap_pct": 2.8534,
+    "volatility_drag_pct": 2.8511
    },
    "frontier": [
     {
@@ -1264,6 +1355,13 @@
  },
  "ledger": {
   "trials_counted": 7,
+  "trials_with_sharpe": 3,
+  "selection_adjustment_status": "unavailable",
+  "selection_adjustment_reasons": [
+   "Some counted trials have no recorded Sharpe ratio.",
+   "Counted trials use different evaluation periods; their variance is not cross-strategy variance on a common sample."
+  ],
+  "independent_trials_assumed": null,
   "entries": [
    {
     "id": "H1-train-base",
@@ -1349,10 +1447,10 @@
   "daily_observations": 810,
   "skewness": 2.0939,
   "excess_kurtosis": 18.957,
-  "sharpe_variance_daily": 0.00019417,
-  "expected_max_sharpe_daily": 0.019324,
-  "expected_max_sharpe_annualised": 0.3692,
-  "deflated_sharpe_probability": 0.7355,
-  "note": "The expected maximum Sharpe ratio is what the best of N unrelated trials would show by luck alone; the deflated Sharpe probability is the chance that the observed Sharpe ratio exceeds it after adjusting for skewness and fat tails of the daily returns. It is a charge for selection, not a proof of an edge."
+  "sharpe_variance_daily": null,
+  "expected_max_sharpe_daily": null,
+  "expected_max_sharpe_annualised": null,
+  "deflated_sharpe_probability": null,
+  "note": "The deflated Sharpe score uses an asymptotic sampling approximation, not a posterior probability of an edge. It requires comparable trial Sharpes and an assumed effective trial count; skewness and kurtosis adjustment does not correct serial dependence. Unavailable inputs leave the selection adjustment unestimated, not zero. Some counted trials have no recorded Sharpe ratio. Counted trials use different evaluation periods; their variance is not cross-strategy variance on a common sample."
  }
 }

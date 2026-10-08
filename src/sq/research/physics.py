@@ -10,11 +10,10 @@ a few minutes. Sections, and the module behind each:
   period: tails, volatility clustering, Hurst exponent, permutation entropy,
   multifractal intermittency.
 - `null_models` (`sq.research.nulls`): H1 replayed on surrogate and simulated
-  markets that share the window's statistics but have no exploitable
-  structure or no drift; the share of such markets that match H1's recorded
+  markets sharing selected statistics; the share of such markets that match H1's recorded
   return and drawdown.
 - `forward_calibration` (`sq.research.nulls`): the forward protocol's own
-  false-GO rate: how often a market with no edge passes P1 and P2 after 30
+  model-conditioned GO rate: how often simulated paths pass P1 and P2 after 30
   trades, and how long 30 trades take.
 - `first_passage` (`sq.research.nulls`): the −20 % stop as a barrier problem
   of a random walk, analytic against simulated.
@@ -44,7 +43,7 @@ import pandas as pd
 
 from sq.research import breakout, growth, ledger, nulls, proxy_data, stylized
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 3
 DEFAULT_SEED = 20260924  # H1's predeclaration date, as statistics.json
 DEFAULT_NULL_TRIALS = 1000
 DEFAULT_CALIBRATION_TRIALS = 1000
@@ -57,26 +56,29 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_LEDGER = REPO_ROOT / "research" / "ledger.json"
 
 METHOD = {
-    "stylized_facts": "Log returns of 4h closes per period; Hill tail index on the largest 5 % "
-    "of losses and gains; Hurst exponent by DFA-1 with an iid shuffle range; permutation "
-    "entropy of order 4; MRW intermittency from the log-covariance of absolute returns.",
-    "null_models": "H1's exact rules (sq.research.breakout, verified against the record; "
-    "StoplossGuard modelled, MaxDrawdown protection not) replayed on surrogates of the window's "
-    "own candles (5-day block shuffle; IAAFT) and on paths from models fitted to the window "
-    "(GBM; GARCH(1,1)-t with zero drift and with the window's sample-mean drift; MRW), with "
-    "intrabar wicks resampled from the real candles and the same warm-up the real run had. "
-    "Shares are over all trials. A fixed stake can lose more than its notional, so returns "
-    "below -100 % and drawdowns above 100 % occur on synthetic paths.",
-    "forward_calibration": "Models fitted to the full 2020-2026 history; 10-year paths; the window "
-    "ends when the 30th trade closes; F3, P1 and P2 as in docs/forward-test.md, buy-and-hold on "
-    "the forward report's basis. share_go under a zero-drift model is the protocol's false-GO "
-    "rate; under the drifted model it is the pass rate in a rising market without timing skill.",
-    "first_passage": "Probability that a driftless Brownian log price with the window's "
-    "volatility crosses the -20 % stop within a horizon: closed form against simulated 4h paths.",
-    "growth": "Time-average (log) growth against the ensemble mean per trade; Kelly fraction "
-    "capped at 1 (no leverage) with a trade bootstrap; compounding frontier on the daily marks.",
-    "ledger": "Deflated Sharpe ratio (Bailey and Lopez de Prado 2014) for the number of counted "
-    "trials in research/ledger.json.",
+    "stylized_facts": "Log returns of 4h closes; Hill tails, DFA-1 and order-4 permutation "
+    "entropy with shuffle ranges, log-absolute-return covariance. These diagnostics do not "
+    "establish or exclude exploitable predictability.",
+    "null_models": "Historical H1 replay with CooldownPeriod, StoplossGuard and default "
+    "ratios-mode MaxDrawdown (absolute cumulative return-ratio drop >0.25 over 540 candles). "
+    "Block shuffle and approximate-spectrum IAAFT; fitted GBM, GARCH-t "
+    "and MRW LOG-return models, with resampled independent intrabar wicks. Zero log drift "
+    "does not imply zero expected price return. These are model-conditioned descriptive "
+    "comparisons. Fixed stakes can lose more than their notional on synthetic paths.",
+    "forward_calibration": "Models fitted to full 2020-2026 history; 10-year paths. Completion "
+    "and P1/P2 pass shares require 30 closed trades without an F3 breach. Years to completion "
+    "are conditional on surviving F3; *_ignoring_f3 and trades_per_year continue despite STOP. "
+    "Shares use all trials. GO is model-conditioned, not a demonstrated false-positive rate. "
+    "All three protections are replayed; F1/F2 operational failures are not simulated.",
+    "first_passage": "Brownian log price with zero log drift and held-out volatility: "
+    "continuous reflection-principle probability, discrete 4h-close monitoring, and continuous "
+    "Brownian-bridge estimator with Monte Carlo standard error. Not H1's conditional stop risk.",
+    "growth": "Empirical log growth; volatility drag is ln(1+mean(r))-mean(ln(1+r)). "
+    "The arithmetic/log gap is separate. Kelly capped at 1, wider search capped at 5; IID "
+    "trade bootstrap. Frontier synthetically compounds daily fixed-notional P&L, not H1 fills.",
+    "ledger": "DSR is unavailable for missing or cross-period trial Sharpes. A raw evaluation "
+    "count is not an effective independent-trial estimate; the asymptotic formula does not "
+    "correct serial dependence or give a posterior probability of an edge.",
 }
 
 

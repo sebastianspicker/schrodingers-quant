@@ -1,10 +1,11 @@
 """Research-trials ledger and the deflated Sharpe ratio.
 
-The measurement side of the project: every look at the data is a trial. If you
-try N unrelated variants and report the best Sharpe ratio, that figure is
-inflated by selection alone. The ledger (`research/ledger.json`) records each
-look, and the deflated Sharpe ratio (Bailey and Lopez de Prado, 2014) charges
-the observed Sharpe ratio for the number of trials.
+The ledger records research evaluations. A count of evaluations alone is not
+an estimate of independent selection trials. The DSR formula requires a
+cross-trial Sharpe variance on comparable data. We leave it unavailable when
+counted Sharpes are missing or periods differ. With complete common-period
+inputs, using the raw count still assumes independent trials; the result is
+an assumption-dependent asymptotic score, not a posterior probability.
 
 Ledger shape (schema_version 1):
 
@@ -15,20 +16,9 @@ Ledger shape (schema_version 1):
                   "description": str, "period": str,
                   "sharpe_annualised": float | null, "counted": bool}]}
 
-`counted` marks the entries that count as independent trials for the
-deflation; the rest (benchmarks, pure reruns) are listed but not charged.
-
-Two figures come out of `ledger_report`:
-
-- The expected maximum Sharpe ratio: what the best of N unrelated trials would
-  show by luck alone, given how much the trials' Sharpe ratios scatter.
-- The deflated Sharpe probability: the chance that the observed Sharpe ratio
-  exceeds that luck benchmark, after adjusting for skewness and fat tails of
-  the daily returns.
-
-Sharpe ratios inside the formulas are per observation (daily), not annualised.
-This is a descriptive charge for selection, not a proof of an edge. Pure
-standard library plus numpy: the normal quantile is a bisection on `math.erf`.
+`counted` marks evaluations included in the selection audit. Sharpe ratios
+inside the formulas are daily, not annualised. The score adjusts the sampling
+approximation for skewness and kurtosis, but not for serial dependence.
 """
 
 import json
@@ -44,10 +34,10 @@ ANNUALISATION_DAYS = 365
 EULER_GAMMA = 0.5772156649015329
 
 NOTE = (
-    "The expected maximum Sharpe ratio is what the best of N unrelated trials would show "
-    "by luck alone; the deflated Sharpe probability is the chance that the observed Sharpe "
-    "ratio exceeds it after adjusting for skewness and fat tails of the daily returns. "
-    "It is a charge for selection, not a proof of an edge."
+    "The deflated Sharpe score uses an asymptotic sampling approximation, not a posterior "
+    "probability of an edge. It requires comparable trial Sharpes and an assumed effective "
+    "trial count; skewness and kurtosis adjustment does not correct serial dependence. "
+    "Unavailable inputs leave the selection adjustment unestimated, not zero."
 )
 
 
@@ -107,7 +97,7 @@ def deflated_sharpe(
     skewness: float,
     excess_kurtosis: float,
 ) -> float:
-    """Probability that the true Sharpe ratio exceeds `benchmark_sharpe`:
+    """Asymptotic probabilistic-Sharpe score against `benchmark_sharpe`:
     Phi((SR - SR0) sqrt(T - 1) / sqrt(1 - g3 SR + (g4 - 1) / 4 SR^2)), with g4 the
     full kurtosis (excess + 3). Per-observation (daily) Sharpe units."""
     if n_obs < 2:
@@ -200,7 +190,19 @@ def ledger_report(
     recorded = [
         e["sharpe_annualised"] / root for e in counted if e["sharpe_annualised"] is not None
     ]
-    variance = float(np.var(recorded, ddof=1)) if len(recorded) >= 2 else None
+    reasons = []
+    if len(recorded) < len(counted):
+        reasons.append("Some counted trials have no recorded Sharpe ratio.")
+    if len({e["period"] for e in counted}) > 1:
+        reasons.append(
+            "Counted trials use different evaluation periods; their variance is not "
+            "cross-strategy variance on a common sample."
+        )
+    if len(recorded) < 2:
+        reasons.append(
+            "At least two comparable trial Sharpes are required to estimate cross-trial variance."
+        )
+    variance = float(np.var(recorded, ddof=1)) if not reasons else None
     expected_max = (
         expected_max_sharpe(len(counted), variance) if variance is not None and counted else None
     )
@@ -215,6 +217,10 @@ def ledger_report(
 
     return {
         "trials_counted": len(counted),
+        "trials_with_sharpe": len(recorded),
+        "selection_adjustment_status": "unavailable" if reasons else "assumption_dependent",
+        "selection_adjustment_reasons": reasons,
+        "independent_trials_assumed": len(counted) if not reasons else None,
         "entries": [
             {
                 "id": e["id"],
@@ -235,5 +241,5 @@ def ledger_report(
             None if expected_max is None else expected_max * root
         ),
         "deflated_sharpe_probability": _round(probability),
-        "note": NOTE,
+        "note": " ".join([NOTE, *reasons]),
     }
