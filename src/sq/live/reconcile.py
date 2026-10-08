@@ -21,11 +21,12 @@ import sys
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
-
-import ccxt
-from freqtrade.enums import RunMode
+from urllib.parse import quote
 
 from sq.config import TRACKED_BASE_CONFIG, load_config
+
+# ccxt and Freqtrade are imported inside the I/O functions, so the pure
+# comparison (`reconcile`, the cursor helpers) is unit-testable without the image.
 
 DEFAULT_AMOUNT_TOLERANCE = 1e-6
 DEFAULT_FEE_TOLERANCE = 1e-6
@@ -195,7 +196,8 @@ def parse_naive_utc(value: str | None) -> datetime | None:
 def read_db_orders(db_url: str, pairs: list[str]) -> tuple[list[DbOrder], dict[str, float]]:
     """Read orders for the given pairs and the open-trade base amount, read-only."""
     path = db_path_from_url(db_url)
-    uri = f"file:{path}?mode=ro"
+    # Percent-encode the path so `?`, `#` or `%` in a file name cannot swallow `mode=ro`.
+    uri = f"file:{quote(path)}?mode=ro"
     connection = sqlite3.connect(uri, uri=True)
     try:
         placeholders = ",".join("?" for _ in pairs)
@@ -243,7 +245,7 @@ def read_db_orders(db_url: str, pairs: list[str]) -> tuple[list[DbOrder], dict[s
 
 
 def fetch_exchange_orders(
-    client: ccxt.kraken, pair: str, since_ms: int, max_pages: int
+    client: Any, pair: str, since_ms: int, max_pages: int
 ) -> list[ExchangeOrder]:
     """Fetch closed orders for a pair since a cursor, paginated with a bound.
 
@@ -299,7 +301,7 @@ def fetch_exchange_orders(
     ]
 
 
-def fetch_base_balance(client: ccxt.kraken, base_currency: str) -> float:
+def fetch_base_balance(client: Any, base_currency: str) -> float:
     """Read-only total (free + used) balance of the base currency."""
     balance = client.fetch_balance()
     entry = balance.get(base_currency)
@@ -338,6 +340,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    import ccxt
+    from freqtrade.enums import RunMode
+
     args = build_arg_parser().parse_args()
     config_paths = args.configs or [TRACKED_BASE_CONFIG]
     config = load_config(config_paths, RunMode.UTIL_NO_EXCHANGE)

@@ -12,8 +12,9 @@ This directory holds research records and inputs, no code. The code lives in
 `src/sq/research/`; H1's periods, fees, pair and run names are defined once in
 `src/sq/research/h1.py`.
 
-- `hypotheses/`: predeclared, falsifiable hypotheses (e.g. `H1.md`). Fixed once
-  dated; changes after that date need a new hypothesis ID, not an edit.
+- `hypotheses/`: predeclared, falsifiable hypotheses (`H1.md`, and the
+  successor `H2.md`, predeclared 2026-10-08 and not yet run). Fixed once dated;
+  changes after that date need a new hypothesis ID, not an edit.
 - `configs/`: standalone Freqtrade config overlays for research backtests
   (e.g. `backtest.json`), not derived from the tracked `config/base.json`.
 - `strategies/`: research-only strategy variants (e.g. sensitivity checks)
@@ -21,7 +22,8 @@ This directory holds research records and inputs, no code. The code lives in
   `--strategy-path` and never used outside train/validation.
 - `experiments/<id>/`: tracked experiment records and summarized JSON results
   (`record.md`, `*.json`); raw Freqtrade export data stays in the ignored
-  `user_data/backtest_results/`.
+  `user_data/backtest_results/`. `experiments/H2/` will hold H2's records, and
+  does not exist yet.
 - `data-manifest.json`: provenance of the proxy OHLCV data (ADR-0002).
 Every research command is `make research ARGS="<subcommand>"`, which runs
 `python -m sq.research <subcommand>` in the `research` Compose service (no
@@ -31,3 +33,10 @@ Each backtest step writes `<run>.json` (Freqtrade metrics with provenance) and
 `mtm-<run>.json` (marked-to-market metrics on the fixed notional, which decide
 H1's criteria). Earlier records name `research/run.sh <subcommand>`, which is
 the same subcommand today.
+
+Each experiment record also carries a statistical assessment:
+`experiments/H1/statistics.json` (bootstrap intervals, block-bootstrap Sharpe,
+random-timing and constant-exposure benchmarks, power analysis). `make stats`
+rebuilds it deterministically from `equity-curves.json` without Docker, and a
+unit test fails if the tracked file drifts from a fresh build
+([ADR-0006](../docs/adr/0006-evidence-standard.md)).

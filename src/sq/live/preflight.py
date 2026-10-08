@@ -14,15 +14,14 @@ Exit code: 0 feasible, 2 infeasible, 1 on error.
 import argparse
 import json
 import sys
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from typing import Any
 
-import ccxt
-from freqtrade.enums import RunMode
-from freqtrade.exchange.exchange_utils import amount_to_precision
-from freqtrade.exchange.kraken import Kraken
-
 from sq.config import TRACKED_BASE_CONFIG, load_config
+
+# ccxt and Freqtrade are imported inside the I/O functions, so the pure
+# feasibility computation is importable and unit-testable without the image.
 
 # --- Pure computation ------------------------------------------------------
 
@@ -80,20 +79,33 @@ class FeasibilityReport:
     reasons: list[str]
 
 
+AmountRounder = Callable[[float, float | None, int], float]
+
+
+def freqtrade_amount_rounder() -> AmountRounder:
+    """Freqtrade's `amount_to_precision` (ccxt TRUNCATE semantics), imported lazily."""
+    from freqtrade.exchange.exchange_utils import amount_to_precision
+
+    return amount_to_precision
+
+
 def assess_feasibility(
     market: MarketProfile,
     stake_eur: float,
     stoploss: float,
     *,
     require_account_data: bool = False,
+    round_amount: AmountRounder | None = None,
 ) -> FeasibilityReport:
     """Pure feasibility computation for one (pair, stake, stoploss) profile.
 
     Assumes Kraken's default convention: the entry (buy) fee is charged in the
     base currency, deducted from the amount received. Amounts are always
     rounded DOWN to exchange precision, matching what an order can actually
-    request or a wallet can actually hold and later sell.
+    request or a wallet can actually hold and later sell. `round_amount`
+    defaults to Freqtrade's `amount_to_precision`; tests inject their own.
     """
+    amount_to_precision = round_amount or freqtrade_amount_rounder()
     reasons: list[str] = []
 
     if require_account_data and not market.account_fee_verified:
@@ -173,6 +185,9 @@ def fetch_market_profile(pair: str, config: dict) -> MarketProfile:
 
     Never calls an order-mutating ccxt method.
     """
+    import ccxt
+    from freqtrade.exchange.kraken import Kraken
+
     exchange_cfg = config.get("exchange", {})
     key = exchange_cfg.get("key") or ""
     secret = exchange_cfg.get("secret") or ""
@@ -287,6 +302,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    from freqtrade.enums import RunMode
+
     args = build_arg_parser().parse_args()
     config_paths = args.configs or [TRACKED_BASE_CONFIG]
     config = load_config(config_paths, RunMode.UTIL_NO_EXCHANGE)

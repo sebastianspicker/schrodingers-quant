@@ -3,7 +3,8 @@
 Hypothesis: [research/hypotheses/H1.md](../../hypotheses/H1.md) (predeclared
 2026-09-24). Strategy: `user_data/strategies/H1ChannelBreakout.py`. Decision:
 **GO (marginal)** under the predeclared fixed-stake protocol; see
-[ADR-0005](../../../docs/adr/0005-h1-go-after-sizing-correction.md).
+[ADR-0005](../../../docs/adr/0005-h1-go-after-sizing-correction.md); evidence
+standard: [ADR-0006](../../../docs/adr/0006-evidence-standard.md).
 
 > **Reworded 2026-09-25 for readability, at the maintainer's request.** Sections
 > were reordered to put the decision first. Every number, hash, path, date and
@@ -112,6 +113,45 @@ These span 2020-01 → 2024-06 as one run each, so they are not comparable
 line by line with the per-period tables above. They were reported, not used to
 choose H1's settings.
 
+## Statistical assessment (added 2026-10-08)
+
+Added after the verdict, without changing any figure above. It asks how much
+the recorded result can be trusted, not whether the criteria were met. The
+full output is [statistics.json](statistics.json); the decision and its
+consequences are in [ADR-0006](../../../docs/adr/0006-evidence-standard.md).
+
+Held-out period, base costs (0.5 % per side):
+
+| Figure | Value |
+| --- | --- |
+| Mean trade, 14 trades | +2.83 % (s.d. 14.49 %) |
+| t-statistic of the mean trade | 0.73 |
+| 95 % bootstrap interval for the mean trade | −3.2 % to +11.1 % |
+| Share of bootstrap resamples with mean ≤ 0 | 24 % |
+| Sharpe ratio (daily marks, 365-day annualisation) | 0.78, 95 % block-bootstrap interval −0.79 to 2.12 |
+| Random timing at equal exposure: share of trials with return ≥ H1's (+39.8 %) | 15 % |
+| Random timing at equal exposure: share of trials with a drawdown no larger than H1's (29.9 % on daily marks) | 36 % |
+| Constant 38.5 % exposure to BTC, daily rebalanced | +12.8 % return, 23.0 % drawdown |
+| Trades needed for t = 2 at this mean and dispersion | 105, about 17 years at 6.3 trades a year |
+
+On validation, random timing at equal exposure did at least as well as H1 in
+54 % of trials, and constant 54 % exposure returned +111 % against H1's +67 %.
+
+Method: every figure comes from the recorded daily equity marks and the 14
+(validation: 11) trades. The seed is fixed (20260924), so `make stats`
+rebuilds `statistics.json` exactly from `equity-curves.json`, and a test fails
+if the tracked file drifts from a fresh build.
+
+Reading, in plain terms: the record does not show an edge. The mean trade's
+interval includes zero, and a strategy that sat in the market for the same
+share of days at random times would have beaten H1's return about one time in
+seven. H1's worst fall (30.4 %) was smaller than buy-and-hold's (52.2 %), but
+that comparison is against 100 % exposure: holding a constant 38.5 % of the
+notional in BTC had a smaller drawdown still (23.0 %), and 36 % of random
+timings at equal exposure also drew down less. The drawdown advantage is
+mostly exposure, not timing. GO (marginal) stands as the procedural verdict;
+it is not evidence of an edge.
+
 ## How the metrics are measured
 
 All strategy metrics are for one position of a fixed 1,000 EUR stake:
@@ -212,3 +252,8 @@ held-out strategy evaluation.
 | Return correlation | How closely two price series move together, from 0 (unrelated) to 1 (identical). |
 | bps | Basis points: hundredths of a percent. |
 | SHA-256 | A fingerprint of a file; any change to the file changes it. |
+| Bootstrap interval | A range for a statistic obtained by resampling the observed trades or days many times; a 95 % interval that includes zero means the data cannot rule out a zero mean. |
+| Block bootstrap | A bootstrap that resamples runs of consecutive days (here 20), keeping trends and volatility clusters intact. |
+| Random timing at equal exposure | Placing H1's own trade durations at random in the period; a benchmark for whether *when* H1 was long mattered. |
+| Constant exposure | Holding a fixed fraction of the notional in BTC every day; a passive portfolio with the same market participation. |
+| Power (trades needed) | The number of trades at which a mean trade of the observed size would reach t = 2. |

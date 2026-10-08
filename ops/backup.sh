@@ -165,6 +165,16 @@ if [ -d "$jev_dir" ]; then
     fi
 fi
 
+# Atomically published forward evidence, window contract and STOP latch.
+if [ -d "$runtime_dir/reports" ]; then
+    mkdir -p "$dest/reports"
+    for report in "$runtime_dir"/reports/*.json; do
+        [ -f "$report" ] || continue
+        cp "$report" "$dest/reports/"
+        chmod 600 "$dest/reports/$(basename "$report")"
+    done
+fi
+
 log "backup written to $dest"
 
 if [ -n "${RESTIC_REPOSITORY:-}" ]; then

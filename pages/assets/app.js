@@ -8,6 +8,7 @@ const K2_FACTOR = 0.6; // H1.md: held-out drawdown ≤ 0.6 × buy-and-hold's
 const TRADE_SCALE = 70; // fixed ±% domain for the trade bars, so runs compare
 const state = { period: "heldout", cost: "base" };
 let data = null;
+let stats = null;
 
 const eur = new Intl.NumberFormat("en-GB", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 const minus = (s) => s.replace("-", "−");
@@ -276,6 +277,103 @@ function renderStats(run) {
   root.classList.remove("is-loading");
 }
 
+// Statistical assessment (statistics.json), as display strings. Pure, so it can be checked without a DOM.
+const NA = "n/a";
+const ok = (...vs) => vs.every((v) => typeof v === "number" && Number.isFinite(v));
+const sgn = (v, digits, unit = "") => minus(`${v > 0 ? "+" : ""}${v.toFixed(digits)}${unit}`);
+const share = (p) => (ok(p) ? `${(p * 100).toFixed(1)} %` : NA);
+
+function assessmentText(s) {
+  const mci = s.bootstrap_trades.mean_ci95_pct;
+  const sci = s.bootstrap_trades.sum_ci95_pp;
+  const shci = s.bootstrap_sharpe.sharpe_ci95;
+  const pw = s.power;
+  const rt = s.random_timing;
+  const ce = s.constant_exposure;
+  const range = (ci, f) => (ci && ok(ci[0], ci[1]) ? `${f(ci[0])} to ${f(ci[1])}` : NA);
+  const spread = (d, signed) => (d && ok(d.p50, d.p5, d.p95) ? { mid: pct(d.p50, signed), range: `[${pct(d.p5, signed)}, ${pct(d.p95, signed)}]` } : { mid: NA, range: "" });
+  const years = pw.years_needed;
+  const rtRet = spread(rt.net_return_pct, true);
+  const rtDd = spread(rt.max_drawdown_pct, false);
+  const t = s.trades.t_stat;
+  const zero = mci && ok(mci[0], mci[1]) ? mci[0] <= 0 && mci[1] >= 0 : null;
+  const verdict = [
+    !ok(t)
+      ? "The t-statistic of the mean trade is not available."
+      : t < 2
+        ? `The mean trade is not distinguishable from zero (t ≈ ${fixed(t, 1)});`
+        : `The mean trade is distinguishable from zero (t ≈ ${fixed(t, 1)});`,
+    zero === null ? "" : zero ? "the 95 % interval for the mean trade includes zero." : "the 95 % interval for the mean trade excludes zero.",
+    !ok(rt.p_return_ge_actual)
+      ? ""
+      : rt.p_return_ge_actual >= 0.05
+        ? `Random timing at equal exposure did at least as well in ${share(rt.p_return_ge_actual)} of trials, so the timing itself is not shown to add value.`
+        : `Random timing at equal exposure did as well in only ${share(rt.p_return_ge_actual)} of trials.`,
+  ].filter(Boolean).join(" ");
+  return {
+    "mean-ci": range(mci, (v) => pct(v)),
+    "p-mean": share(s.bootstrap_trades.p_mean_le_zero),
+    "sum-ci": range(sci, (v) => sgn(v, 0, " pp")),
+    "sharpe-ci": range(shci, (v) => fixed(v)),
+    power: ok(pw.trades_needed)
+      ? `${pw.trades_needed}${ok(years, pw.trades_per_year_observed) ? ` (≈ ${years >= 10 ? Math.round(years) : years.toFixed(1)} years at ${pw.trades_per_year_observed.toFixed(1)} trades/year)` : ""}`
+      : NA,
+    "ret-h1": ok(s.strategy.net_return_pct) ? pct(s.strategy.net_return_pct) : NA,
+    "ret-rt": rtRet,
+    "ret-ce": ok(ce.net_return_pct) ? pct(ce.net_return_pct) : NA,
+    "dd-h1": ok(s.strategy.max_drawdown_pct) ? pct(s.strategy.max_drawdown_pct, false) : NA,
+    "dd-rt": rtDd,
+    "dd-ce": ok(ce.max_drawdown_pct) ? pct(ce.max_drawdown_pct, false) : NA,
+    "bench-note":
+      `Random timings that did at least as well: ${share(rt.p_return_ge_actual)}; ` +
+      `that had a smaller drawdown: ${share(rt.p_drawdown_le_actual)}. ` +
+      `Exposure fraction used: ${ok(ce.exposure_fraction) ? pct(ce.exposure_fraction * 100, false) : NA}.`,
+    verdict,
+    yearly: s.yearly.map((y) => ({
+      year: String(y.year),
+      span: [`${y.year - 1}-12-31`, `${y.year}-01-01`].includes(y.from) && y.to === `${y.year}-12-31` ? "" : `${y.from} → ${y.to}`,
+      h1: ok(y.strategy_pct) ? pct(y.strategy_pct) : NA,
+      hold: ok(y.buy_hold_pct) ? pct(y.buy_hold_pct) : NA,
+    })),
+  };
+}
+
+function renderAssessment() {
+  const status = document.getElementById("assessment-status");
+  const tables = document.getElementById("assessment-tables");
+  const s = stats?.runs?.[`${state.period}-${state.cost}`];
+  if (!s) {
+    tables.hidden = true;
+    status.hidden = false;
+    status.textContent = stats ? "No statistics recorded for this run." : "statistics.json not loaded.";
+    return;
+  }
+  const text = assessmentText(s);
+  const set = (field, value) => {
+    tables.querySelector(`[data-s="${field}"]`).textContent = value;
+  };
+  for (const field of ["mean-ci", "p-mean", "sum-ci", "sharpe-ci", "power", "ret-h1", "ret-ce", "dd-h1", "dd-ce", "bench-note", "verdict"]) {
+    set(field, text[field]);
+  }
+  for (const [field, cell] of [["ret-rt", text["ret-rt"]], ["dd-rt", text["dd-rt"]]]) {
+    const td = tables.querySelector(`[data-s="${field}"]`);
+    td.textContent = cell.mid;
+    if (cell.range) td.append(" ", html("span", "range", cell.range));
+  }
+  const body = document.getElementById("yearly-body");
+  body.textContent = "";
+  for (const y of text.yearly) {
+    const label = html("th", "", y.year);
+    label.scope = "row";
+    if (y.span) label.append(html("span", "range sub", y.span));
+    const tr = document.createElement("tr");
+    tr.append(label, html("td", "num", y.h1), html("td", "num", y.hold));
+    body.appendChild(tr);
+  }
+  status.hidden = true;
+  tables.hidden = false;
+}
+
 function renderTrades(run) {
   document.getElementById("trades-title").textContent = `Trades (${run.trades.length})`;
   const body = document.getElementById("trades-body");
@@ -318,6 +416,7 @@ function render() {
     `${PERIODS[state.period]}, ${first} → ${last}; H1 ${COSTS[state.cost]}, buy and hold 0.5 % per side; daily marks.`;
   renderStats(run);
   renderTrades(run);
+  renderAssessment();
 
   const equity = document.getElementById("equity-chart");
   drawChart(equity, run, {
@@ -386,6 +485,7 @@ function showError(message) {
     chart.appendChild(html("p", "chart-state error", message));
   }
   document.querySelector(".trades").hidden = true;
+  renderAssessment();
   document.querySelector('#stats [data-f="status"]').textContent =
     "No run loaded. The decision table under Protocol comes from the experiment record and is unaffected.";
 }
@@ -422,13 +522,18 @@ window.addEventListener("resize", () => {
 readUrl();
 syncControls();
 document.getElementById("stats").classList.add("is-loading");
-fetch("data/equity-curves.json")
-  .then((r) => {
+const getJson = (url) =>
+  fetch(url).then((r) => {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return r.json();
-  })
-  .then((json) => {
+  });
+Promise.all([
+  getJson("data/equity-curves.json"),
+  getJson("data/statistics.json").catch(() => null), // the assessment is optional: the rest of the page renders without it
+])
+  .then(([json, statistics]) => {
     data = json;
+    stats = statistics;
     render();
   })
   .catch((err) => showError(`Could not load data/equity-curves.json (${err.message}).`));

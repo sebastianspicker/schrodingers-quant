@@ -11,10 +11,7 @@ __pycache__/
 .history/
 .cache/
 
-# Tests and coverage
-tests/
-pytest.ini
-conftest.py
+# Test tooling state (the tests themselves are tracked; see ADR-0006)
 jest.config.*
 .pytest_cache/
 .coverage

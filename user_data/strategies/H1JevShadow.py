@@ -138,7 +138,7 @@ def _strategy_identity(strategy_cls: type) -> str:
             continue
         try:
             sources.append(inspect.getsource(cls))
-        except OSError, TypeError:
+        except (OSError, TypeError):
             continue
     return hashlib.sha256("\n".join(sources).encode("utf-8")).hexdigest()
 
@@ -184,7 +184,7 @@ def _parse_utc(value) -> datetime | None:
         return None
     try:
         parsed = datetime.fromisoformat(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=UTC)

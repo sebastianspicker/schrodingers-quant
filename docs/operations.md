@@ -21,15 +21,18 @@ machine. For a server, use the runbooks:
 
 | Command | Effect |
 | --- | --- |
-| `make check` | Ruff lint and format check, shellcheck, Compose syntax with both overlay examples |
+| `make test` | The unit tests (`uv run --locked pytest`); needs only uv, no Docker |
+| `make check` | `make test`, then Ruff lint and format check, shellcheck, Compose syntax with both overlay examples |
+| `make stats` | Rebuilds `research/experiments/H1/statistics.json` from the recorded equity curves (fixed seed); needs only uv, no Docker. A test fails if the tracked file drifts from a fresh build |
 | `make validate` | Tracked `config/base.json` alone: invariants and strategy load |
 | `make validate-local` | Also base + `config/local/secrets.json` if present |
 | `make validate-live` / `make validate-vps` | Base + tracked live or VPS overlay |
-| `make ci` | Static checks plus the base, live and VPS validations above |
+| `make ci` | `make check` (so the unit tests too) plus the base, live and VPS validations above |
 | `make research ARGS="…"` | `python -m sq.research` subcommands in the `research` service; with no argument it lists them |
 | `make preflight ARGS="--pair BTC/EUR --stake 8 --stoploss -0.20"` | Read-only Kraken feasibility check |
 | `make preflight-live ARGS="--pair BTC/EUR --stake 8 --stoploss -0.20"` | Same check with live layers; requires authenticated fee and balance reads |
 | `make reconcile` | Read-only comparison of the trade database with Kraken; needs secrets |
+| `make forward-report ARGS="…"` | Read-only forward paper-trading report from the trade database and public Kraken candles; exit 0 CONTINUE, 4 STOP, 1 error. No credentials with the default config |
 | `make backup` | `ops/backup.sh`: every `user_data/runtime/*.sqlite` plus the Jev records |
 | `make retention` | `ops/retention.sh`: prunes dangling images (dry-run unless `ARGS=--apply`) |
 | `make up`, `make down`, `make logs`, `make status` | Local container lifecycle |
@@ -39,6 +42,15 @@ machine. For a server, use the runbooks:
 other in-image command runs as `docker compose run --rm <tools|research> …`
 (Compose profile `tools`). The Jev worker starts only with
 `docker compose --profile jev up -d jev-worker`.
+
+## Forward test
+
+While the bot runs in dry-run (and later in the live pilot), `make
+forward-report` judges it against the criteria F1 to F4 fixed in advance in
+[forward test](forward-test.md). On the VPS, `sq-forward-report.timer` runs it
+daily through `ops/forward_report.sh`; a STOP fails the unit and reaches the
+dead-man's switch ([runbook](../ops/README.md)). Like the other in-image
+commands, it has not yet been run against a real database.
 
 ## Secrets and local overlays
 

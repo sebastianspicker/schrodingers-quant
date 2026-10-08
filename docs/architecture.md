@@ -21,7 +21,8 @@ only when a drill shows a gap in Freqtrade.
 | Project package `sq` | `src/sq/` | one-shot `tools`/`research` containers; `sq.jev.worker` in `jev-worker` | outputs named on the command line | see dependency rules |
 | Jev worker | `sq.jev.worker`, service `jev-worker` (profile `jev`) | own container, no credentials | appends `runtime/jev/assessments.jsonl` | a model provider (none real yet) |
 | Research | `research/` (hypotheses, configs, records), `sq.research` (code) | development machine, service `research` | `research/experiments/`, `user_data/{data,backtest_results}` | Binance/Kraken public data |
-| Host operations | `ops/` | Debian 13 host, systemd | `user_data/runtime/backups/` | Docker, dead-man's switch, restic |
+| Host operations | `ops/` | Debian 13 host, systemd | `user_data/runtime/backups/`, `user_data/runtime/reports/` | Docker, dead-man's switch, restic |
+| Unit tests | `tests/` | development machine and CI, no Docker (`make test`) | nothing | the code under `src/`, `ops/` and `user_data/strategies/` |
 | Demo site | `pages/`, `pages/build.sh`, `.github/workflows/pages.yml` | GitHub Pages, static | nothing at runtime | reads `research/experiments/H1/equity-curves.json` at build time |
 
 ### `sq` package
@@ -31,11 +32,13 @@ only when a drill shows a gap in Freqtrade.
 | `sq.config` | Tracked base config path; load layered Freqtrade config; tracked-default invariants; credential checks for deployable layers; strategy load | `python -m sq.config` (`make validate*`) |
 | `sq.live.preflight` | Read-only: can a stake enter and still exit at the stop after fees and precision? The live-pilot mode also requires authenticated fee and balance reads. Exit 0 feasible, 2 infeasible, 1 error | `make preflight`; `make preflight-live` |
 | `sq.live.reconcile` | Read-only: trade DB vs Kraken order history and balance. Exit 0 match, 3 mismatch, 1 error | `make reconcile` |
+| `sq.live.forward` | Read-only: the forward paper-trading report from the trade DB (opened read-only) and public Kraken candles; marked-to-market performance, execution cost, signal fidelity and the criteria F1–F4 ([forward test](forward-test.md)). Exit 0 CONTINUE, 4 STOP, 1 error | `make forward-report` |
 | `sq.jev.protocol` | The Jev file contract (names, JSONL, UTC timestamps, decisions) | — |
 | `sq.jev.providers`, `sq.jev.worker` | Assess recorded candidates under a timeout; single instance; append assessments | `python -m sq.jev.worker` |
 | `sq.research.h1` | H1's experiment definition: pair, periods, fees, notional, strategies, run and record names | — |
 | `sq.research.pipeline` | Runs Freqtrade (backtesting, bias analyses) in the research container and writes every record: `<run>.json`, `mtm-<run>.json`, benchmarks, data manifest, proxy check, demo equity curves | `python -m sq.research <subcommand>` (`make research ARGS=…`) |
 | `sq.research.metrics` | Pure metrics: fixed-notional equity curve, marked-to-market drawdown, buy-and-hold, backtest summary | — |
+| `sq.research.statistics` | Pure numpy/pandas, so it runs without the image: bootstrap intervals, block-bootstrap Sharpe, exposure-matched random-timing and constant-exposure benchmarks, power analysis; builds `statistics.json` from the recorded curves ([ADR-0006](adr/0006-evidence-standard.md)) | `make stats` |
 | `sq.research.provenance` | Image reference and file hashes stamped on every record | — |
 | `sq.research.data_manifest`, `proxy_check`, `equity_curves` | Proxy-data provenance, Binance-vs-Kraken check (ADR-0002), demo curves that must reproduce the record | via the pipeline |
 | `sq.research.jev_evaluation` | Offline baseline-vs-filter comparison using only assessments available before entry | `make research ARGS="jev-evaluate …"` |
@@ -50,16 +53,36 @@ only when a drill shows a gap in Freqtrade.
 - No project Python (`src/`, `ops/`, both strategy directories) names an
   order-creating, -cancelling or -editing method.
 - `sq.research` depends on `sq.jev.protocol` (to read records), never the
-  reverse; nothing outside `sq.research` imports it.
+  reverse; `sq.live.forward` may import its pure metrics, statistics and H2 arithmetic;
+  production order execution does not import it.
 - Strategies import Freqtrade, pandas, the standard library and each other,
   never `sq`. The trading container does not mount `src/`. That keeps the
   strategies loadable by any Freqtrade instance and keeps the class source,
   which is part of Jev's `candidate_id`, free of package changes.
-- `ops/*.py` is standard library only (Debian's system Python).
+- `ops/*.py` is standard library only (Debian's system Python). The same holds
+  for `ops/forward_record.py`, invoked by `ops/forward_report.sh`, which runs
+  `sq.live.forward` in the tools container and publishes timestamped JSON,
+  latest/error state, a window manifest and a persistent STOP latch.
+- Modules that need Freqtrade or ccxt (`sq.config`, `sq.live.*`) import them
+  inside functions, not at module level, so their pure logic can be
+  unit-tested in `tests/` without the image. A new module follows the same
+  rule.
 
 `H1JevShadow` therefore keeps its own copy of the file-name constants and
 readers. Its writer, reader, constants and decisions must remain aligned with
 `sq.jev.protocol`.
+
+### Workbench v2 additions
+
+`sq.research.desk` runs with the standard library alone and builds Markdown,
+JSON and monthly CSV from the archived record. `sq.live.candles` validates and
+archives closed OHLCV in runtime/market-data.sqlite. The forward reporter
+reads actual fills in one SQLite snapshot and publishes separate reference,
+account, benchmark and evidence sections. `ops/forward_record.py` serializes
+report jobs, atomically publishes latest/error state, binds window identity
+and preserves the first STOP. `ops/health_ping.py` checks those records when
+HEALTH_FORWARD_REPORT is configured. SQLite and report backups retain this
+state. See [ADR-0007](adr/0007-trader-workbench.md).
 
 ## Runtime definition
 
@@ -107,7 +130,12 @@ contains no credentials, and default targets (`validate`, `up`) never name it.
 - **Research:** Binance OHLCV (Kraken proxy, ADR-0002) → Freqtrade
   backtests run by `sq.research.pipeline` → Freqtrade and marked-to-market
   summaries with provenance (image, strategy file hash, data manifest hash) →
-  `research/experiments/<id>/` → the demo's `equity-curves.json`.
+  `research/experiments/<id>/` → the demo's `equity-curves.json`. `make stats`
+  rebuilds `statistics.json` from those curves without Docker.
+- **Forward test:** the dry-run trade DB (read-only) and public candles →
+  `sq.live.forward` → `user_data/runtime/reports/forward-<UTC timestamp>.json` and a
+  verdict. `ops/forward_report.sh`, run daily by `sq-forward-report.timer`,
+  fails the unit on a STOP, which reaches the dead-man's switch.
 - **Operations:** the health timer checks `/api/v1/health` freshness and disk
   usage, then pings a dead-man's switch. The backup timer snapshots every
   `runtime/*.sqlite` and the Jev JSONL records with `sqlite3 .backup`,

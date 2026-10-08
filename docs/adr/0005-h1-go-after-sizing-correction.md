@@ -1,6 +1,8 @@
 # ADR-0005 — H1 is GO (marginal) after correcting the backtest sizing
 
-**Date:** 2026-09-24. **Status:** accepted. Supersedes [ADR-0004](0004-h1-no-go.md).
+**Date:** 2026-09-24. **Status:** accepted. Supersedes [ADR-0004](0004-h1-no-go.md). Amended by
+[ADR-0006](0006-evidence-standard.md) (2026-10-08): the verdict stands; its
+interpretation and the forward criteria are there.
 
 > **Reworded 2026-09-25 for readability, at the maintainer's request.** The
 > decision and its reasons are unchanged. One figure is written more precisely:

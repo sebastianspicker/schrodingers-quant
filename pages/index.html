@@ -19,6 +19,7 @@
       <a class="brand" href="./">Schrödingers Quant</a>
       <nav aria-label="Sections">
         <a href="#results">Results</a>
+        <a href="#assessment">Assessment</a>
         <a href="#protocol">Protocol</a>
         <a href="#limitations">Limitations</a>
         <a href="#system">System</a>
@@ -66,6 +67,9 @@
         <li>
           <b>It lags in strong trends.</b> Validation: <span class="n" data-check="validation-base:net_return_pct">+67.2 %</span> vs <span class="n" data-check="validation-base:buy_hold_net_return_pct">+265.2 %</span>
           for buy-and-hold, at a similar drawdown (<span class="n" data-check="validation-base:mtm_max_drawdown_pct">20.6 %</span> vs <span class="n" data-check="validation-base:buy_hold_max_drawdown_pct">20.5 %</span>).
+        </li>
+        <li>
+          <b>Uncertainty:</b> the 95 % bootstrap interval for the mean trade runs from about −3 % to +11 %, and random timing at the same exposure did at least as well in about 15 % of trials (<a href="#assessment">Assessment</a>). The record does not show an edge, and its drawdown advantage over buy-and-hold is mostly lower exposure: constant 38.5 % exposure drew down less than H1.
         </li>
         <li>
           <b>Gate:</b> the four predeclared criteria pass, the drawdown criterion by <span class="n" data-check="heldout-base:k2_margin">0.94 pp</span>, on
@@ -183,6 +187,63 @@
       </div>
     </section>
 
+    <section id="assessment" aria-labelledby="assessment-title">
+      <h2 id="assessment-title">Statistical assessment</h2>
+      <p>
+        These figures are computed from the recorded daily equity curves and the trade list by
+        <a href="https://github.com/sebastianspicker/schrodingers-quant/blob/main/src/sq/research/statistics.py"><code>sq.research.statistics</code></a>
+        with a fixed seed, and are part of the record. They were not part of the predeclared decision rule.
+        They follow the run chosen under Results.
+      </p>
+      <p class="no-js">
+        The tables need JavaScript. The figures are in
+        <a href="https://github.com/sebastianspicker/schrodingers-quant/blob/main/research/experiments/H1/statistics.json">statistics.json</a>.
+      </p>
+      <div class="needs-js" id="assessment-body">
+        <p class="note" id="assessment-status">Loading the statistical assessment…</p>
+        <div class="stats" id="assessment-tables" hidden>
+          <table class="stat-table">
+            <caption>Uncertainty</caption>
+            <tbody>
+              <tr><th scope="row">Mean trade, 95 % bootstrap interval</th><td class="num" data-s="mean-ci">—</td></tr>
+              <tr><th scope="row">Share of resamples with mean ≤ 0</th><td class="num" data-s="p-mean">—</td></tr>
+              <tr><th scope="row">Sum of trade returns, 95 % interval</th><td class="num" data-s="sum-ci">—</td></tr>
+              <tr><th scope="row">Sharpe ratio, 95 % block-bootstrap interval</th><td class="num" data-s="sharpe-ci">—</td></tr>
+              <tr><th scope="row">Trades needed for t = 2</th><td class="num" data-s="power">—</td></tr>
+            </tbody>
+          </table>
+          <table class="stat-table">
+            <caption>Calendar years</caption>
+            <thead>
+              <tr><th scope="col">Year</th><th scope="col" class="num h1">H1</th><th scope="col" class="num">Buy &amp; hold</th></tr>
+            </thead>
+            <tbody id="yearly-body"></tbody>
+          </table>
+          <div class="wide">
+            <div class="table-scroll" tabindex="0" role="region" aria-labelledby="bench-caption">
+              <table class="stat-table">
+                <caption id="bench-caption">Benchmarks at equal exposure</caption>
+                <thead>
+                  <tr>
+                    <th scope="col"><span class="visually-hidden">Measure</span></th>
+                    <th scope="col" class="num h1">H1</th>
+                    <th scope="col" class="num">Random timing <span class="range">(median, 5–95 %)</span></th>
+                    <th scope="col" class="num">Constant exposure</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><th scope="row">Net return</th><td class="num" data-s="ret-h1">—</td><td class="num" data-s="ret-rt">—</td><td class="num" data-s="ret-ce">—</td></tr>
+                  <tr><th scope="row">Max drawdown</th><td class="num" data-s="dd-h1">—</td><td class="num" data-s="dd-rt">—</td><td class="num" data-s="dd-ce">—</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <p class="note" data-s="bench-note"></p>
+          <p class="note stats-note" data-s="verdict"></p>
+        </div>
+      </div>
+    </section>
+
     <section id="protocol" aria-labelledby="protocol-title">
       <h2 id="protocol-title">Protocol</h2>
       <p>
@@ -229,6 +290,7 @@
             <tr><td>Freqtrade <code>recursive-analysis</code></td><td>startup 121 … 1999 bars</td><td>no indicator variance</td></tr>
             <tr><td>Binance vs Kraken, BTC/EUR 4h</td><td>last 719 Kraken bars</td><td>return corr. 0.985, median |Δclose| 1.06 bp</td></tr>
             <tr><td>Sensitivity, 10/5 and 55/20 channels</td><td>train + validation</td><td>reported, not used to select</td></tr>
+            <tr><td>Unit tests (signal arithmetic, no lookahead by truncation, frozen file hash, decision metrics)</td><td><code>tests/</code>, every CI run, no Docker</td><td>pass</td></tr>
           </tbody>
         </table>
       </div>
@@ -242,11 +304,13 @@
         <li><b>Selection with hindsight.</b> The hypothesis was written by an AI model whose training covers crypto prices up to mid-2026. Choosing a trend follower for this market may itself be informed by the test period. Only the 20/10 channel lengths come from the literature.</li>
         <li><b>One asset, one path.</b> A single pair and a single price history. ETH/EUR was run as a robustness check on train + validation only.</li>
         <li><b>Execution is modelled, not observed.</b> Fills at next bar open with a flat cost per side; no order-book depth, partial fills or outages. The proxy check covers prices, not fills.</li>
-        <li><b>Benchmark choice.</b> Buy-and-hold at 100 % exposure is a weak comparison for a strategy that is in cash about 60 % of the time. An exposure-matched or volatility-matched benchmark was not predeclared.</li>
+        <li><b>Benchmark choice.</b> Buy-and-hold at 100 % exposure is a weak comparison for a strategy that is in cash about 60 % of the time. The exposure-matched benchmarks under <a href="#assessment">Assessment</a> were added after the fact (2026-10-08), not predeclared; on the held-out run, about 15 % of random timings at equal exposure did at least as well.</li>
       </ol>
       <p>
-        Next: forward paper trading on the target VPS, then a €10 live execution test to measure real fills and fees.
-        Neither has started. Full details are in the
+        Next: forward paper trading on the target VPS, judged by criteria fixed in advance
+        (<a href="https://github.com/sebastianspicker/schrodingers-quant/blob/main/docs/forward-test.md">forward test protocol</a>:
+        signal fidelity, realized costs, a drawdown stop, and 30 closed trades before any performance judgement), then a €10
+        live execution test to measure real fills and fees. Neither has started. Full details are in the
         <a href="https://github.com/sebastianspicker/schrodingers-quant/blob/main/research/experiments/H1/record.md">experiment record</a> and
         <a href="https://github.com/sebastianspicker/schrodingers-quant/blob/main/docs/adr/0005-h1-go-after-sizing-correction.md">ADR-0005</a>.
       </p>
@@ -254,6 +318,16 @@
 
     <section id="system" aria-labelledby="system-title">
       <h2 id="system-title">System</h2>
+      <p>
+        Take the record into your own research:
+        <a href="desk/report.md" download>trader report</a>,
+        <a href="desk/monthly-returns.csv" download>monthly returns CSV</a>, and
+        <a href="desk/report.json" download>analysis JSON</a>.
+        Includes cash-allocation scenarios, time underwater and winner concentration.
+        Run <code>make desk ARGS="--monthly-cost-eur 10"</code> locally with your own
+        hosting cost to assess the economics. Scenarios are retrospective; daily
+        drawdown estimates do not replace the recorded 4h measurements.
+      </p>
       <p>
         Freqtrade 2026.8, pinned by image digest, is the only component that places orders. The tracked
         configuration is spot, dry-run, without exchange credentials, and starts in <code>stopped</code>.

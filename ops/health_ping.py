@@ -20,7 +20,8 @@ Required environment variables:
 
 Optional environment variables (all have defaults, see --help):
   FREQTRADE_API_URL, HEALTH_MAX_AGE_SECONDS, HEALTH_DISK_PATH,
-  HEALTH_DISK_MAX_PERCENT, HEALTH_TIMEOUT_SECONDS, SQ_HOME
+  HEALTH_DISK_MAX_PERCENT, HEALTH_TIMEOUT_SECONDS, SQ_HOME,
+  HEALTH_FORWARD_REPORT, HEALTH_FORWARD_MAX_AGE_SECONDS
 """
 
 import argparse
@@ -34,6 +35,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 logger = logging.getLogger("health_ping")
@@ -49,6 +51,7 @@ DEFAULT_BASE_URL = "http://127.0.0.1:8080"
 DEFAULT_MAX_AGE_SECONDS = 15 * 60
 DEFAULT_DISK_MAX_PERCENT = 85.0
 DEFAULT_TIMEOUT_SECONDS = 10.0
+DEFAULT_FORWARD_MAX_AGE_SECONDS = 36 * 60 * 60
 
 
 @dataclass(frozen=True)
@@ -110,6 +113,56 @@ def combine_decisions(*decisions: Decision) -> Decision:
     return Decision(True, "; ".join(d.reason for d in decisions))
 
 
+def decide_forward_health(payload: object, now_ts: float, max_age_seconds: int) -> Decision:
+    """Require a fresh CONTINUE report, using its generation time, not file mtime."""
+    if not isinstance(payload, dict):
+        return Decision(False, "forward report is malformed")
+    criteria = payload.get("criteria")
+    if not isinstance(criteria, dict):
+        return Decision(False, "forward report has no valid criteria")
+    verdict = criteria.get("verdict")
+    if verdict == "STOP":
+        return Decision(False, "forward report verdict is STOP; investigate before resuming")
+    if verdict != "CONTINUE":
+        return Decision(False, "forward report has no valid verdict")
+    generated_at = payload.get("generated_at")
+    try:
+        if not isinstance(generated_at, str):
+            raise ValueError
+        generated = datetime.fromisoformat(generated_at)
+        if generated.tzinfo is None or generated.utcoffset() is None:
+            raise ValueError
+        age = now_ts - generated.timestamp()
+    except (ValueError, TypeError, OverflowError):
+        return Decision(False, "forward report has no valid timezone-aware generation time")
+    if age < 0:
+        return Decision(False, "forward report generation time is in the future (clock skew)")
+    if age > max_age_seconds:
+        return Decision(
+            False, f"forward report is {age:.0f}s old, exceeds {max_age_seconds}s threshold"
+        )
+    return Decision(True, f"forward report CONTINUE, generated {age:.0f}s ago")
+
+
+def forward_report_health(path: Path, now_ts: float, max_age_seconds: int) -> Decision:
+    """Read the persistent latest report without printing its content or path."""
+    # The reporter preserves the first STOP in this sibling file. A later
+    # CONTINUE must not erase the incident before an operator investigates it.
+    try:
+        path.with_name("forward-stop.json").stat()
+    except FileNotFoundError:
+        pass
+    except OSError as error:
+        return Decision(False, f"could not inspect forward STOP latch ({type(error).__name__})")
+    else:
+        return Decision(False, "forward STOP latch exists; investigate and archive before resuming")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        return Decision(False, f"forward report unavailable or malformed ({type(error).__name__})")
+    return decide_forward_health(payload, now_ts, max_age_seconds)
+
+
 # --- I/O ---
 
 
@@ -132,13 +185,14 @@ def disk_usage_percent(path: Path) -> float:
 def send_ping(url: str, timeout: float, body: str = "") -> bool:
     """Notify a healthchecks.io-style ping URL. GET for a plain success ping,
     POST with `body` for a failure report. Returns whether delivery succeeded."""
-    data = body.encode("utf-8") if body else None
-    request = urllib.request.Request(url, data=data, method="POST" if data else "GET")
     try:
+        data = body.encode("utf-8") if body else None
+        request = urllib.request.Request(url, data=data, method="POST" if data else "GET")
         with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
             return 200 <= response.status < 300
-    except (urllib.error.URLError, OSError) as error:
-        logger.warning("could not deliver ping to dead-man's-switch: %s", error)
+    except (urllib.error.URLError, OSError, ValueError) as error:
+        # URL exceptions may contain the secret ping token or URL credentials.
+        logger.warning("could not deliver ping to dead-man's-switch (%s)", type(error).__name__)
         return False
 
 
@@ -152,6 +206,8 @@ def run(
     disk_path: Path,
     disk_max_percent: float,
     timeout: float,
+    forward_report: Path | None = None,
+    forward_max_age_seconds: int = DEFAULT_FORWARD_MAX_AGE_SECONDS,
 ) -> int:
     """Perform one health-check cycle and notify the dead-man's-switch."""
     now_ts = time.time()
@@ -159,16 +215,25 @@ def run(
     try:
         payload = fetch_health(base_url, username, password, timeout)
     except (urllib.error.URLError, OSError, ValueError) as error:
-        reason = f"could not reach {base_url}/api/v1/health: {error}"
+        reason = f"could not read bot health ({type(error).__name__})"
         logger.error(reason)
         if send_ping(hc_ping_url.rstrip("/") + "/fail", timeout, body=reason[:200]):
             return EXIT_UNREACHABLE
         return EXIT_PING_FAILED
 
-    last_process_ts = parse_health_payload(payload)
-    bot_decision = decide_bot_health(last_process_ts, now_ts, max_age_seconds)
-    disk_decision = decide_disk_health(disk_usage_percent(disk_path), disk_max_percent)
-    decision = combine_decisions(bot_decision, disk_decision)
+    try:
+        last_process_ts = parse_health_payload(payload)
+        bot_decision = decide_bot_health(last_process_ts, now_ts, max_age_seconds)
+    except (AttributeError, TypeError, ValueError, OverflowError):
+        bot_decision = Decision(False, "bot health payload is malformed")
+    try:
+        disk_decision = decide_disk_health(disk_usage_percent(disk_path), disk_max_percent)
+    except OSError as error:
+        disk_decision = Decision(False, f"could not check disk usage ({type(error).__name__})")
+    decisions = [bot_decision, disk_decision]
+    if forward_report is not None:
+        decisions.append(forward_report_health(forward_report, now_ts, forward_max_age_seconds))
+    decision = combine_decisions(*decisions)
 
     if decision.healthy:
         logger.info(decision.reason)
@@ -226,7 +291,24 @@ def main(argv: list[str] | None = None) -> int:
             "to relay an unrelated unit's failure to the same dead-man's-switch."
         ),
     )
+    forward_report_env = os.environ.get("HEALTH_FORWARD_REPORT")
+    parser.add_argument(
+        "--forward-report",
+        type=Path,
+        default=Path(forward_report_env) if forward_report_env else None,
+        help="Latest forward report plus STOP latch (default: disabled; HEALTH_FORWARD_REPORT)",
+    )
+    parser.add_argument(
+        "--forward-max-age-seconds",
+        type=int,
+        default=int(
+            os.environ.get("HEALTH_FORWARD_MAX_AGE_SECONDS", DEFAULT_FORWARD_MAX_AGE_SECONDS)
+        ),
+        help="Maximum age of the latest forward report (default: 36 hours)",
+    )
     args = parser.parse_args(argv)
+    if args.forward_max_age_seconds <= 0:
+        parser.error("--forward-max-age-seconds must be positive")
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -258,6 +340,8 @@ def main(argv: list[str] | None = None) -> int:
         disk_path=args.disk_path,
         disk_max_percent=args.disk_max_percent,
         timeout=args.timeout,
+        forward_report=args.forward_report,
+        forward_max_age_seconds=args.forward_max_age_seconds,
     )
 
 

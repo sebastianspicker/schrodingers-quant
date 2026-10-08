@@ -24,6 +24,10 @@ the box, it is **not trading**.
   data was run, by a narrow margin and on simulated fills. The verdict is
   *GO, marginal*: enough for forward paper trading and a €10 live execution
   test, not for more capital ([experiment record](research/experiments/H1/record.md)).
+  A statistical assessment of the record shows that the mean trade's 95 %
+  interval includes zero and that H1's timing is not shown to beat random
+  timing at the same exposure, so the result is not read as an edge
+  ([ADR-0006](docs/adr/0006-evidence-standard.md)).
 - **Where it stands.** Dry-run only. Nothing has been deployed, funded or
   traded live ([status](docs/status.md)).
 
@@ -31,6 +35,32 @@ the box, it is **not trading**.
 > This is an experiment, not investment advice. The strategy passed its
 > predeclared test only by a narrow margin, on simulated fills. Reliable
 > operation and positive returns are separate goals, and neither is promised.
+
+## For a quant trader
+
+Start with `make desk`: an offline decision report built from the archived
+record, with monthly strategy/benchmark returns, time underwater, winner
+concentration, 25–100% fixed-stake cash sleeves and optional hosting economics.
+It writes `build/desk/report.md`, `report.json` and `monthly-returns.csv` without
+Docker, market downloads or another backtest.
+
+```sh
+make desk
+make desk ARGS="--monthly-cost-eur 10"  # replace the illustrative cost with yours
+```
+
+On the held-out base record, the last equity high was 641 days before the end;
+removing the two largest winners leaves −25.84 percentage points of rounded
+trade returns. These diagnostics help assess whether the experiment deserves
+time and capital; they do not establish an edge. See the
+[trader workflow](docs/trader-workflow.md).
+
+Forward protocol v2 now uses an incremental SQLite candle archive, actual
+filled-order timestamps, separate fixed-stake/account returns, full-history H2
+sizing and implemented P1/P2 gates. Daily reports preserve STOP incidents and
+reject changed window contracts. Tools are bounded to one CPU and 512 MiB;
+research stays on the workstation. [ADR-0007](docs/adr/0007-trader-workbench.md)
+records the corrected contracts and limits.
 
 ## Screenshot tour
 
@@ -47,7 +77,8 @@ on a fixed €1,000 stake. Next to the recorded return, CAGR and drawdown, the
 page computes volatility, Sharpe and Sortino ratios, beta, and trade statistics
 (mean trade, t-statistic, profit factor, concentration) from the recorded
 series. On held-out data the mean trade has t ≈ 0.73, and the two largest
-trades carry the result.
+trades carry the result. The page also shows a statistical assessment
+section: bootstrap intervals and a random-timing benchmark at equal exposure.
 [Open the held-out run](https://sebastianspicker.github.io/schrodingers-quant/?period=heldout&cost=base).
 
 ![Held-out period: statistics tables and the equity chart; H1 ends at €1,398 against €1,186 for buy-and-hold](pages/assets/screenshots/heldout.png)
@@ -95,6 +126,14 @@ The page also works on a phone and follows your system's dark mode.
   lookahead bias, and evaluated once on held-out data. The result is GO, but
   only just, and the [experiment record](research/experiments/H1/record.md)
   explains why that is weak evidence.
+- **Statistics with uncertainty.** Bootstrap intervals for the mean trade, a
+  block-bootstrap interval for the Sharpe ratio, an exposure-matched
+  random-timing benchmark, a constant-exposure benchmark and a power analysis,
+  rebuilt by `make stats` from the recorded curves and shown on the demo page
+  ([ADR-0006](docs/adr/0006-evidence-standard.md)).
+- **A forward test with rules fixed in advance.** `make forward-report` reads
+  the dry-run trade database and public candles, read-only, and checks the
+  predeclared criteria F1 to F4 ([forward test](docs/forward-test.md)).
 - **Safe defaults.** Spot only, dry-run, no credentials,
   `initial_state: stopped`. `make validate` rejects tracked config that drifts
   from those defaults, and the project exchange helpers are read-only.
@@ -122,13 +161,14 @@ You need Docker with Compose and [uv](https://docs.astral.sh/uv/).
 git clone https://github.com/sebastianspicker/schrodingers-quant.git
 cd schrodingers-quant
 uv sync --locked --group dev
-make ci        # lint, Compose checks, and base/live/VPS config validation
+make ci        # unit tests, lint, Compose checks, and base/live/VPS config validation
 make up        # dry-run bot; stays "stopped" until started via API or Telegram
 make logs
 make down
 ```
 
-`make help` lists every target. Passing checks show that the Compose files,
+`make ci` runs the tracked unit tests, which need no Docker; `make test` alone
+needs only uv. `make help` lists every target. Passing checks show that the Compose files,
 configuration and strategy load. They don't show exchange connectivity, real
 fills or profitability.
 
@@ -158,11 +198,12 @@ pairs. Other exchanges need changes there and a fresh preflight run.
 | `compose.yaml` | The pinned Freqtrade image and every service: bot, Jev worker, tools and research |
 | `config/` | Freqtrade config layers: `base.json` (dry-run), `live.json` (explicit live overlay), `examples/`, ignored `local/` |
 | `user_data/strategies/` | `H1ChannelBreakout` (frozen), `H1JevShadow` (optional model filter) |
-| `src/sq/` | Project package: config validation, read-only live tools, Jev worker, research pipeline and analysis |
-| `research/` | Hypotheses, research configs, experiment records, research-only strategies |
+| `src/sq/` | Project package: config validation, read-only live tools (including the forward report), Jev worker, research pipeline, analysis and statistics |
+| `tests/` | Unit tests of the research, live-tooling and ops logic; no Docker needed (`make test`) |
+| `research/` | Hypotheses (H1, and the predeclared successor H2), research configs, experiment records, research-only strategies |
 | `ops/` | Host side: health ping, backup and restore, retention, systemd units, runbooks |
 | `pages/` | The GitHub Pages demo and its screenshots |
-| `docs/` | [Status](docs/status.md), [architecture](docs/architecture.md), [research decision](docs/adr/0005-h1-go-after-sizing-correction.md), [operations](docs/operations.md), [live pilot](docs/live-pilot.md), [Jev](docs/jev.md) |
+| `docs/` | [Status](docs/status.md), [architecture](docs/architecture.md), [research decision](docs/adr/0005-h1-go-after-sizing-correction.md), [evidence standard](docs/adr/0006-evidence-standard.md), [forward test](docs/forward-test.md), [operations](docs/operations.md), [live pilot](docs/live-pilot.md), [Jev](docs/jev.md) |
 
 Research, backtests and model work run on a development machine, never on the
 VPS.
@@ -170,8 +211,10 @@ VPS.
 ## Project status
 
 Dry-run only. Nothing has been deployed, funded or traded live. The next step
-is a 14-day soak on a VPS, which also serves as H1's forward paper test. See
-[status](docs/status.md) for what has been verified and what hasn't.
+is a 14-day soak on a VPS, which also serves as H1's forward paper test. Its
+rules are predeclared in the [forward test protocol](docs/forward-test.md), and
+the successor hypothesis [H2](research/hypotheses/H2.md) is predeclared but has
+not been run. See [status](docs/status.md) for what has been verified and what hasn't.
 
 ## Contributing and security
 
@@ -197,4 +240,7 @@ Never paste API keys, account exports or trade databases into an issue.
 | Forward paper trading | Running the strategy in dry-run on data that did not exist when it was chosen. |
 | Soak | A 14-day unattended dry-run on the VPS, with drills, before any live money. |
 | Dead-man's switch | An external monitor that alerts when the bot's regular health ping stops arriving. |
+| Bootstrap interval | A range for a statistic obtained by resampling the observed trades or days many times; a 95 % interval that includes zero means the data cannot rule out a zero mean. |
+| Random timing at equal exposure | Placing the strategy's own trade durations at random in the period; a benchmark for whether *when* it was long mattered. |
+| Forward criteria (F1–F4) | The forward test's predeclared implementation and execution checks (signal fidelity, realized cost, drawdown, 30 closed trades), fixed before the test starts. |
 | Preflight / reconciliation | Read-only checks against Kraken: can a stake enter and exit, and does the trade database match the exchange? |

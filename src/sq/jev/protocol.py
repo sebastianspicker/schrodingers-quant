@@ -67,7 +67,7 @@ def parse_utc(value: str | None) -> datetime | None:
         return None
     try:
         parsed = datetime.fromisoformat(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=UTC)

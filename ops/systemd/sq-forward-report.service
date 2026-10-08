@@ -1,0 +1,25 @@
+[Unit]
+Description=Schrödingers Quant daily forward paper-trading report (docs/forward-test.md)
+Documentation=file:///opt/schrodingers-quant/docs/forward-test.md
+After=schrodingers-quant.service sq-backup.service
+OnFailure=sq-alert@%n.service
+
+[Service]
+Type=oneshot
+User=sq
+WorkingDirectory=/opt/schrodingers-quant
+# Optional: SQ_FORWARD_ARGS (e.g. --since <window start> --candles <file>),
+# see ops/README.md §4. The leading "-" makes a missing file non-fatal.
+EnvironmentFile=-/etc/schrodingers-quant/ops.env
+ExecStart=/opt/schrodingers-quant/ops/forward_report.sh $SQ_FORWARD_ARGS
+# Exit 4 is the report's STOP verdict, exit 1 an error; both must alert.
+TimeoutStartSec=600
+
+# Cheap hardening; unverified by systemd-analyze on this macOS development
+# machine — see ops/README.md §4.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes

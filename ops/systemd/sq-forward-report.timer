@@ -1,0 +1,10 @@
+[Unit]
+Description=Run sq-forward-report.service daily, after the backup
+
+[Timer]
+OnCalendar=*-*-* 04:15:00
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

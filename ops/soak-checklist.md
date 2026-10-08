@@ -18,6 +18,8 @@ been run.
 - [ ] Telegram `/status` responds
 - [ ] Record start time (UTC), Freqtrade image digest, git commit, and the
       config file list in use
+- [ ] Record the forward window start (the first candle after `/start`) as
+      defined in `docs/forward-test.md`
 
 ## Daily / periodic observation (log a line per check)
 
@@ -29,6 +31,8 @@ been run.
       check ok
 - [ ] No unexpected restarts: `docker compose ps` uptime, or
       `systemctl status schrodingers-quant.service`
+- [ ] `journalctl -u sq-forward-report.service --since -1d` ran, verdict
+      CONTINUE; copy its one-line summary into the soak log
 
 ## Drills (each at least once during the soak, spaced out, one at a time)
 
@@ -146,6 +150,8 @@ running it right after a backup completes, mid-window before the next one.
 - [ ] No un-alerted silence period longer than the dead-man's-switch's grace
       window
 - [ ] Backups exist for each day, retention held at the configured count
+- [ ] File the latest forward report under `research/experiments/H1/forward/`
+      with the soak record (`docs/forward-test.md`)
 - [ ] Write the soak record (resource figures, drill results, any
       surprises) and use it as evidence for the live-authorization decision,
       never as a substitute for the maintainer's explicit sign-off

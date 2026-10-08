@@ -10,17 +10,34 @@ dependencies = []
 package = false
 
 [tool.ruff]
-target-version = "py314"
+# The code runs on the pinned Freqtrade image's Python and, for ops/, on
+# Debian 13's system Python (3.13). Neither is guaranteed to be 3.14, so the
+# formatter and the pyupgrade rules must not introduce 3.14-only syntax such
+# as `except A, B:` without parentheses (PEP 758). See ADR-0006.
+target-version = "py313"
 line-length = 100
 # Import roots: the project package, Freqtrade strategies, and host scripts.
 src = ["src", "user_data/strategies", "ops"]
-# Host-side scripts run on the VPS system Python (Debian 13: 3.13), not in the image.
-per-file-target-version = { "ops/**/*.py" = "py313" }
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Import roots for the tests: the project package, the Freqtrade strategies
+# (loaded through tests/conftest.py's minimal IStrategy stand-in when the real
+# Freqtrade is absent) and the host scripts.
+pythonpath = ["src", "user_data/strategies", "ops"]
+addopts = "-q"
+filterwarnings = ["error::DeprecationWarning:sq", "error::FutureWarning"]
+
 [dependency-groups]
 dev = [
     "ruff==0.16.8",
+    # Unit tests of the pure research, live-tooling and ops logic run on the
+    # development machine without Docker; Freqtrade itself is never a dev
+    # dependency (the pinned image is the only Freqtrade runtime).
+    "pytest>=8.3",
+    "pandas>=2.2,<4",
+    "numpy>=1.26",
 ]

@@ -1,0 +1,879 @@
+{
+ "source": "equity-curves.json",
+ "source_sha256": "5206ed92601acfdf3d0a29271bafb45516adbd52878ef760c4c4987e54139290",
+ "pair": "BTC/EUR",
+ "timeframe": "4h",
+ "notional_eur": 1000,
+ "method": {
+  "daily_marks": "last 4h close per UTC day; simple daily returns; 365-day annualisation; risk-free rate 0",
+  "trade_returns": "Freqtrade profit_ratio per trade, net of fees, percent of the fixed stake",
+  "bootstrap_trades": "percentile bootstrap of the per-trade returns",
+  "bootstrap_sharpe": "circular block bootstrap of daily returns",
+  "random_timing": "the run's own trade durations (whole days) placed at random, non-overlapping, in the period; fee per side on each trade; marked daily",
+  "constant_exposure": "the run's average exposure held in the asset every day, rebalanced daily without rebalancing cost, base fee on the exposed part at start and end (base fee for every run, like the buy-and-hold comparator)",
+  "drawdown_comparisons": "benchmark drawdowns are on daily marks and are compared with the strategy's daily-mark drawdown (max_drawdown_pct_daily), not the 4h record",
+  "seed": 20260924
+ },
+ "decision": {
+  "criteria": [
+   {
+    "id": "K1",
+    "description": "held-out net return > 0, base costs",
+    "value": 39.8117,
+    "threshold": 0.0,
+    "margin_pp": 39.8117,
+    "pass": true
+   },
+   {
+    "id": "K2",
+    "description": "held-out max drawdown <= 0.6 x buy-and-hold max drawdown",
+    "value": 30.3692,
+    "threshold": 31.3095,
+    "margin_pp": 0.9403,
+    "pass": true
+   },
+   {
+    "id": "K3",
+    "description": "held-out net return > 0, stress costs",
+    "value": 25.5462,
+    "threshold": 0.0,
+    "margin_pp": 25.5462,
+    "pass": true
+   },
+   {
+    "id": "K4",
+    "description": "validation net return > 0, base costs",
+    "value": 67.2025,
+    "threshold": 0.0,
+    "margin_pp": 67.2025,
+    "pass": true
+   }
+  ],
+  "verdict": "GO",
+  "binding": "K2"
+ },
+ "runs": {
+  "train-base": {
+   "period": {
+    "start": "2020-01-01",
+    "end": "2023-01-01",
+    "days": 1096,
+    "years": 3.001,
+    "fee_per_side": 0.005
+   },
+   "strategy": {
+    "net_return_pct": 140.6297,
+    "cagr_pct": 34.1023,
+    "max_drawdown_pct": 28.3624,
+    "max_drawdown_pct_daily": 26.3721,
+    "longest_drawdown_days": 437,
+    "annualised_volatility_pct": 29.2824,
+    "sharpe": 1.1469,
+    "sortino": 1.835,
+    "return_over_max_drawdown": 4.9583,
+    "calmar": 1.2024,
+    "exposure_pct": 41.3777,
+    "beta_to_buy_hold": 0.2269,
+    "correlation_to_buy_hold": 0.5577
+   },
+   "buy_hold": {
+    "net_return_pct": 132.5247,
+    "cagr_pct": 32.587,
+    "max_drawdown_pct": 74.1619,
+    "max_drawdown_pct_daily": 73.621,
+    "longest_drawdown_days": 418,
+    "annualised_volatility_pct": 71.994,
+    "sharpe": 0.7674,
+    "sortino": 1.0894,
+    "return_over_max_drawdown": 1.787,
+    "calmar": 0.4394
+   },
+   "trades": {
+    "count": 16,
+    "winners": 8,
+    "win_rate_pct": 50.0,
+    "mean_pct": 8.745,
+    "sd_pct": 25.6652,
+    "t_stat": 1.3629,
+    "sum_pct": 139.92,
+    "profit_factor": 2.996,
+    "mean_win_pct": 26.2525,
+    "mean_loss_pct": -8.7625,
+    "payoff_ratio": 2.996,
+    "top2_contribution_pp": 120.64,
+    "rest_contribution_pp": 19.28,
+    "longest_losing_streak": 3,
+    "median_holding_days": 17.92,
+    "mean_holding_days": 28.34,
+    "exit_reasons": {
+     "exit_signal": 16
+    }
+   },
+   "power": {
+    "t_target": 2.0,
+    "trades_needed": 35,
+    "trades_per_year_observed": 5.332,
+    "years_needed": 6.6
+   },
+   "bootstrap_trades": {
+    "resamples": 10000,
+    "seed": 20260924,
+    "mean_ci95_pct": [
+     -2.1957,
+     21.8459
+    ],
+    "sum_ci95_pp": [
+     -35.131,
+     349.5337
+    ],
+    "p_mean_le_zero": 0.0702
+   },
+   "bootstrap_sharpe": {
+    "resamples": 2000,
+    "block_days": 20,
+    "seed": 20260924,
+    "sharpe_ci95": [
+     -0.02,
+     2.3038
+    ],
+    "p_sharpe_le_zero": 0.0265
+   },
+   "random_timing": {
+    "trials": 5000,
+    "seed": 20260924,
+    "fee_per_side": 0.005,
+    "trade_count": 16,
+    "exposure_days": 451,
+    "period_days": 1093,
+    "net_return_pct": {
+     "mean": 60.9959,
+     "p5": -60.0286,
+     "p50": 55.7405,
+     "p95": 198.136
+    },
+    "max_drawdown_pct": {
+     "mean": 44.6055,
+     "p5": 19.012,
+     "p50": 44.8857,
+     "p95": 75.724
+    },
+    "actual_net_return_pct": 140.6297,
+    "actual_max_drawdown_pct_daily": 26.3721,
+    "p_return_ge_actual": 0.1624,
+    "p_drawdown_le_actual": 0.1732
+   },
+   "constant_exposure": {
+    "exposure_fraction": 0.4138,
+    "fee_per_side": 0.005,
+    "net_return_pct": 72.6742,
+    "max_drawdown_pct": 39.3018
+   },
+   "yearly": [
+    {
+     "year": 2020,
+     "from": "2020-01-03",
+     "to": "2020-12-31",
+     "strategy_pct": 122.82,
+     "buy_hold_pct": 261.0
+    },
+    {
+     "year": 2021,
+     "from": "2020-12-31",
+     "to": "2021-12-31",
+     "strategy_pct": 16.77,
+     "buy_hold_pct": 71.4
+    },
+    {
+     "year": 2022,
+     "from": "2021-12-31",
+     "to": "2022-12-31",
+     "strategy_pct": -7.52,
+     "buy_hold_pct": -62.05
+    }
+   ]
+  },
+  "train-stress": {
+   "period": {
+    "start": "2020-01-01",
+    "end": "2023-01-01",
+    "days": 1096,
+    "years": 3.001,
+    "fee_per_side": 0.01
+   },
+   "strategy": {
+    "net_return_pct": 123.8448,
+    "cagr_pct": 30.9008,
+    "max_drawdown_pct": 30.6505,
+    "max_drawdown_pct_daily": 28.4078,
+    "longest_drawdown_days": 437,
+    "annualised_volatility_pct": 30.0398,
+    "sharpe": 1.045,
+    "sortino": 1.6631,
+    "return_over_max_drawdown": 4.0405,
+    "calmar": 1.0082,
+    "exposure_pct": 41.3777,
+    "beta_to_buy_hold": 0.2309,
+    "correlation_to_buy_hold": 0.5534
+   },
+   "buy_hold": {
+    "net_return_pct": 132.5247,
+    "cagr_pct": 32.587,
+    "max_drawdown_pct": 74.1619,
+    "max_drawdown_pct_daily": 73.621,
+    "longest_drawdown_days": 418,
+    "annualised_volatility_pct": 71.9939,
+    "sharpe": 0.7674,
+    "sortino": 1.0894,
+    "return_over_max_drawdown": 1.787,
+    "calmar": 0.4394
+   },
+   "trades": {
+    "count": 16,
+    "winners": 6,
+    "win_rate_pct": 37.5,
+    "mean_pct": 7.6656,
+    "sd_pct": 25.4101,
+    "t_stat": 1.2067,
+    "sum_pct": 122.65,
+    "profit_factor": 2.5584,
+    "mean_win_pct": 33.5583,
+    "mean_loss_pct": -7.87,
+    "payoff_ratio": 4.2641,
+    "top2_contribution_pp": 117.46,
+    "rest_contribution_pp": 5.19,
+    "longest_losing_streak": 6,
+    "median_holding_days": 17.92,
+    "mean_holding_days": 28.34,
+    "exit_reasons": {
+     "exit_signal": 16
+    }
+   },
+   "power": {
+    "t_target": 2.0,
+    "trades_needed": 44,
+    "trades_per_year_observed": 5.332,
+    "years_needed": 8.3
+   },
+   "bootstrap_trades": {
+    "resamples": 10000,
+    "seed": 20260924,
+    "mean_ci95_pct": [
+     -3.1663,
+     20.6365
+    ],
+    "sum_ci95_pp": [
+     -50.6612,
+     330.1837
+    ],
+    "p_mean_le_zero": 0.101
+   },
+   "bootstrap_sharpe": {
+    "resamples": 2000,
+    "block_days": 20,
+    "seed": 20260924,
+    "sharpe_ci95": [
+     -0.1344,
+     2.1932
+    ],
+    "p_sharpe_le_zero": 0.045
+   },
+   "random_timing": {
+    "trials": 5000,
+    "seed": 20260924,
+    "fee_per_side": 0.01,
+    "trade_count": 16,
+    "exposure_days": 451,
+    "period_days": 1093,
+    "net_return_pct": {
+     "mean": 44.3444,
+     "p5": -75.4666,
+     "p50": 39.1416,
+     "p95": 180.1098
+    },
+    "max_drawdown_pct": {
+     "mean": 48.156,
+     "p5": 20.3697,
+     "p50": 47.5138,
+     "p95": 84.4753
+    },
+    "actual_net_return_pct": 123.8448,
+    "actual_max_drawdown_pct_daily": 28.4078,
+    "p_return_ge_actual": 0.1606,
+    "p_drawdown_le_actual": 0.1666
+   },
+   "constant_exposure": {
+    "exposure_fraction": 0.4138,
+    "fee_per_side": 0.01,
+    "net_return_pct": 71.9585,
+    "max_drawdown_pct": 39.4213
+   },
+   "yearly": [
+    {
+     "year": 2020,
+     "from": "2020-01-03",
+     "to": "2020-12-31",
+     "strategy_pct": 117.18,
+     "buy_hold_pct": 261.0
+    },
+    {
+     "year": 2021,
+     "from": "2020-12-31",
+     "to": "2021-12-31",
+     "strategy_pct": 14.34,
+     "buy_hold_pct": 71.4
+    },
+    {
+     "year": 2022,
+     "from": "2021-12-31",
+     "to": "2022-12-31",
+     "strategy_pct": -9.86,
+     "buy_hold_pct": -62.05
+    }
+   ]
+  },
+  "validation-base": {
+   "period": {
+    "start": "2023-01-01",
+    "end": "2024-07-01",
+    "days": 547,
+    "years": 1.498,
+    "fee_per_side": 0.005
+   },
+   "strategy": {
+    "net_return_pct": 67.2025,
+    "cagr_pct": 41.0391,
+    "max_drawdown_pct": 20.6251,
+    "max_drawdown_pct_daily": 18.7206,
+    "longest_drawdown_days": 308,
+    "annualised_volatility_pct": 30.0856,
+    "sharpe": 1.2916,
+    "sortino": 2.1198,
+    "return_over_max_drawdown": 3.2583,
+    "calmar": 1.9898,
+    "exposure_pct": 53.5649,
+    "beta_to_buy_hold": 0.4781,
+    "correlation_to_buy_hold": 0.7342
+   },
+   "buy_hold": {
+    "net_return_pct": 265.2324,
+    "cagr_pct": 137.867,
+    "max_drawdown_pct": 20.5232,
+    "max_drawdown_pct_daily": 18.3289,
+    "longest_drawdown_days": 111,
+    "annualised_volatility_pct": 46.1998,
+    "sharpe": 2.1539,
+    "sortino": 3.6016,
+    "return_over_max_drawdown": 12.9235,
+    "calmar": 6.7176
+   },
+   "trades": {
+    "count": 11,
+    "winners": 5,
+    "win_rate_pct": 45.45,
+    "mean_pct": 6.0791,
+    "sd_pct": 19.0015,
+    "t_stat": 1.0611,
+    "sum_pct": 66.87,
+    "profit_factor": 2.5372,
+    "mean_win_pct": 22.074,
+    "mean_loss_pct": -7.25,
+    "payoff_ratio": 3.0447,
+    "top2_contribution_pp": 73.21,
+    "rest_contribution_pp": -6.34,
+    "longest_losing_streak": 2,
+    "median_holding_days": 22.0,
+    "mean_holding_days": 26.64,
+    "exit_reasons": {
+     "exit_signal": 11
+    }
+   },
+   "power": {
+    "t_target": 2.0,
+    "trades_needed": 40,
+    "trades_per_year_observed": 7.345,
+    "years_needed": 5.4
+   },
+   "bootstrap_trades": {
+    "resamples": 10000,
+    "seed": 20260924,
+    "mean_ci95_pct": [
+     -3.9291,
+     17.2775
+    ],
+    "sum_ci95_pp": [
+     -43.2205,
+     190.0522
+    ],
+    "p_mean_le_zero": 0.1349
+   },
+   "bootstrap_sharpe": {
+    "resamples": 2000,
+    "block_days": 20,
+    "seed": 20260924,
+    "sharpe_ci95": [
+     -0.4324,
+     2.9399
+    ],
+    "p_sharpe_le_zero": 0.0835
+   },
+   "random_timing": {
+    "trials": 5000,
+    "seed": 20260924,
+    "fee_per_side": 0.005,
+    "trade_count": 11,
+    "exposure_days": 293,
+    "period_days": 546,
+    "net_return_pct": {
+     "mean": 70.5197,
+     "p5": 18.0917,
+     "p50": 70.3769,
+     "p95": 123.965
+    },
+    "max_drawdown_pct": {
+     "mean": 18.2473,
+     "p5": 11.2069,
+     "p50": 17.7729,
+     "p95": 28.3871
+    },
+    "actual_net_return_pct": 67.2025,
+    "actual_max_drawdown_pct_daily": 18.7206,
+    "p_return_ge_actual": 0.539,
+    "p_drawdown_le_actual": 0.648
+   },
+   "constant_exposure": {
+    "exposure_fraction": 0.5356,
+    "fee_per_side": 0.005,
+    "net_return_pct": 110.8565,
+    "max_drawdown_pct": 10.1643
+   },
+   "yearly": [
+    {
+     "year": 2023,
+     "from": "2023-01-01",
+     "to": "2023-12-31",
+     "strategy_pct": 40.56,
+     "buy_hold_pct": 148.37
+    },
+    {
+     "year": 2024,
+     "from": "2023-12-31",
+     "to": "2024-06-30",
+     "strategy_pct": 18.96,
+     "buy_hold_pct": 52.12
+    }
+   ]
+  },
+  "validation-stress": {
+   "period": {
+    "start": "2023-01-01",
+    "end": "2024-07-01",
+    "days": 547,
+    "years": 1.498,
+    "fee_per_side": 0.01
+   },
+   "strategy": {
+    "net_return_pct": 55.8113,
+    "cagr_pct": 34.5365,
+    "max_drawdown_pct": 25.9301,
+    "max_drawdown_pct_daily": 23.3033,
+    "longest_drawdown_days": 309,
+    "annualised_volatility_pct": 31.5705,
+    "sharpe": 1.0958,
+    "sortino": 1.7611,
+    "return_over_max_drawdown": 2.1524,
+    "calmar": 1.3319,
+    "exposure_pct": 53.5649,
+    "beta_to_buy_hold": 0.4941,
+    "correlation_to_buy_hold": 0.723
+   },
+   "buy_hold": {
+    "net_return_pct": 265.2324,
+    "cagr_pct": 137.867,
+    "max_drawdown_pct": 20.5232,
+    "max_drawdown_pct_daily": 18.3288,
+    "longest_drawdown_days": 111,
+    "annualised_volatility_pct": 46.1997,
+    "sharpe": 2.1539,
+    "sortino": 3.6016,
+    "return_over_max_drawdown": 12.9235,
+    "calmar": 6.7176
+   },
+   "trades": {
+    "count": 11,
+    "winners": 5,
+    "win_rate_pct": 45.45,
+    "mean_pct": 5.0236,
+    "sd_pct": 18.8133,
+    "t_stat": 0.8856,
+    "sum_pct": 55.26,
+    "profit_factor": 2.1268,
+    "mean_win_pct": 20.86,
+    "mean_loss_pct": -8.1733,
+    "payoff_ratio": 2.5522,
+    "top2_contribution_pp": 70.5,
+    "rest_contribution_pp": -15.24,
+    "longest_losing_streak": 2,
+    "median_holding_days": 22.0,
+    "mean_holding_days": 26.64,
+    "exit_reasons": {
+     "exit_signal": 11
+    }
+   },
+   "power": {
+    "t_target": 2.0,
+    "trades_needed": 57,
+    "trades_per_year_observed": 7.345,
+    "years_needed": 7.8
+   },
+   "bootstrap_trades": {
+    "resamples": 10000,
+    "seed": 20260924,
+    "mean_ci95_pct": [
+     -4.8855,
+     16.1102
+    ],
+    "sum_ci95_pp": [
+     -53.74,
+     177.2125
+    ],
+    "p_mean_le_zero": 0.1803
+   },
+   "bootstrap_sharpe": {
+    "resamples": 2000,
+    "block_days": 20,
+    "seed": 20260924,
+    "sharpe_ci95": [
+     -0.6508,
+     2.7368
+    ],
+    "p_sharpe_le_zero": 0.1225
+   },
+   "random_timing": {
+    "trials": 5000,
+    "seed": 20260924,
+    "fee_per_side": 0.01,
+    "trade_count": 11,
+    "exposure_days": 293,
+    "period_days": 546,
+    "net_return_pct": {
+     "mean": 58.7852,
+     "p5": 6.8832,
+     "p50": 58.6431,
+     "p95": 111.6948
+    },
+    "max_drawdown_pct": {
+     "mean": 20.4189,
+     "p5": 12.3397,
+     "p50": 18.8436,
+     "p95": 32.6969
+    },
+    "actual_net_return_pct": 55.8113,
+    "actual_max_drawdown_pct_daily": 23.3033,
+    "p_return_ge_actual": 0.5354,
+    "p_drawdown_le_actual": 0.7484
+   },
+   "constant_exposure": {
+    "exposure_fraction": 0.5356,
+    "fee_per_side": 0.01,
+    "net_return_pct": 109.7261,
+    "max_drawdown_pct": 10.1643
+   },
+   "yearly": [
+    {
+     "year": 2023,
+     "from": "2023-01-01",
+     "to": "2023-12-31",
+     "strategy_pct": 32.32,
+     "buy_hold_pct": 148.37
+    },
+    {
+     "year": 2024,
+     "from": "2023-12-31",
+     "to": "2024-06-30",
+     "strategy_pct": 17.76,
+     "buy_hold_pct": 52.12
+    }
+   ]
+  },
+  "heldout-base": {
+   "period": {
+    "start": "2024-07-01",
+    "end": "2026-09-20",
+    "days": 811,
+    "years": 2.22,
+    "fee_per_side": 0.005
+   },
+   "strategy": {
+    "net_return_pct": 39.8117,
+    "cagr_pct": 16.3133,
+    "max_drawdown_pct": 30.3692,
+    "max_drawdown_pct_daily": 29.876,
+    "longest_drawdown_days": 641,
+    "annualised_volatility_pct": 22.7609,
+    "sharpe": 0.7755,
+    "sortino": 1.3153,
+    "return_over_max_drawdown": 1.3109,
+    "calmar": 0.5372,
+    "exposure_pct": 38.4505,
+    "beta_to_buy_hold": 0.2663,
+    "correlation_to_buy_hold": 0.5262
+   },
+   "buy_hold": {
+    "net_return_pct": 17.5654,
+    "cagr_pct": 7.5603,
+    "max_drawdown_pct": 52.1825,
+    "max_drawdown_pct_daily": 51.7039,
+    "longest_drawdown_days": 348,
+    "annualised_volatility_pct": 44.9744,
+    "sharpe": 0.4112,
+    "sortino": 0.6097,
+    "return_over_max_drawdown": 0.3366,
+    "calmar": 0.1449
+   },
+   "trades": {
+    "count": 14,
+    "winners": 5,
+    "win_rate_pct": 35.71,
+    "mean_pct": 2.83,
+    "sd_pct": 14.492,
+    "t_stat": 0.7307,
+    "sum_pct": 39.62,
+    "profit_factor": 1.9866,
+    "mean_win_pct": 15.956,
+    "mean_loss_pct": -4.4622,
+    "payoff_ratio": 3.5758,
+    "top2_contribution_pp": 65.46,
+    "rest_contribution_pp": -25.84,
+    "longest_losing_streak": 5,
+    "median_holding_days": 15.75,
+    "mean_holding_days": 22.27,
+    "exit_reasons": {
+     "exit_signal": 13,
+     "force_exit": 1
+    }
+   },
+   "power": {
+    "t_target": 2.0,
+    "trades_needed": 105,
+    "trades_per_year_observed": 6.305,
+    "years_needed": 16.7
+   },
+   "bootstrap_trades": {
+    "resamples": 10000,
+    "seed": 20260924,
+    "mean_ci95_pct": [
+     -3.2329,
+     11.0915
+    ],
+    "sum_ci95_pp": [
+     -45.2612,
+     155.281
+    ],
+    "p_mean_le_zero": 0.2437
+   },
+   "bootstrap_sharpe": {
+    "resamples": 2000,
+    "block_days": 20,
+    "seed": 20260924,
+    "sharpe_ci95": [
+     -0.786,
+     2.1245
+    ],
+    "p_sharpe_le_zero": 0.16
+   },
+   "random_timing": {
+    "trials": 5000,
+    "seed": 20260924,
+    "fee_per_side": 0.005,
+    "trade_count": 14,
+    "exposure_days": 314,
+    "period_days": 810,
+    "net_return_pct": {
+     "mean": 2.4987,
+     "p5": -54.0612,
+     "p50": 1.8405,
+     "p95": 60.9854
+    },
+    "max_drawdown_pct": {
+     "mean": 38.2101,
+     "p5": 17.8779,
+     "p50": 35.3248,
+     "p95": 68.0984
+    },
+    "actual_net_return_pct": 39.8117,
+    "actual_max_drawdown_pct_daily": 29.876,
+    "p_return_ge_actual": 0.1506,
+    "p_drawdown_le_actual": 0.3602
+   },
+   "constant_exposure": {
+    "exposure_fraction": 0.3845,
+    "fee_per_side": 0.005,
+    "net_return_pct": 12.8479,
+    "max_drawdown_pct": 23.0249
+   },
+   "yearly": [
+    {
+     "year": 2024,
+     "from": "2024-07-01",
+     "to": "2024-12-31",
+     "strategy_pct": 42.47,
+     "buy_hold_pct": 53.98
+    },
+    {
+     "year": 2025,
+     "from": "2024-12-31",
+     "to": "2025-12-31",
+     "strategy_pct": -12.5,
+     "buy_hold_pct": -17.57
+    },
+    {
+     "year": 2026,
+     "from": "2025-12-31",
+     "to": "2026-09-19",
+     "strategy_pct": 12.15,
+     "buy_hold_pct": -5.01
+    }
+   ]
+  },
+  "heldout-stress": {
+   "period": {
+    "start": "2024-07-01",
+    "end": "2026-09-20",
+    "days": 811,
+    "years": 2.22,
+    "fee_per_side": 0.01
+   },
+   "strategy": {
+    "net_return_pct": 25.5462,
+    "cagr_pct": 10.8034,
+    "max_drawdown_pct": 36.4966,
+    "max_drawdown_pct_daily": 36.0342,
+    "longest_drawdown_days": 641,
+    "annualised_volatility_pct": 24.0849,
+    "sharpe": 0.5441,
+    "sortino": 0.9061,
+    "return_over_max_drawdown": 0.7,
+    "calmar": 0.296,
+    "exposure_pct": 38.4505,
+    "beta_to_buy_hold": 0.2731,
+    "correlation_to_buy_hold": 0.51
+   },
+   "buy_hold": {
+    "net_return_pct": 17.5654,
+    "cagr_pct": 7.5603,
+    "max_drawdown_pct": 52.1825,
+    "max_drawdown_pct_daily": 51.7041,
+    "longest_drawdown_days": 348,
+    "annualised_volatility_pct": 44.9743,
+    "sharpe": 0.4112,
+    "sortino": 0.6096,
+    "return_over_max_drawdown": 0.3366,
+    "calmar": 0.1449
+   },
+   "trades": {
+    "count": 14,
+    "winners": 5,
+    "win_rate_pct": 35.71,
+    "mean_pct": 1.8064,
+    "sd_pct": 14.3459,
+    "t_stat": 0.4711,
+    "sum_pct": 25.29,
+    "profit_factor": 1.5192,
+    "mean_win_pct": 14.8,
+    "mean_loss_pct": -5.4122,
+    "payoff_ratio": 2.7346,
+    "top2_contribution_pp": 62.81,
+    "rest_contribution_pp": -37.52,
+    "longest_losing_streak": 5,
+    "median_holding_days": 15.75,
+    "mean_holding_days": 22.27,
+    "exit_reasons": {
+     "exit_signal": 13,
+     "force_exit": 1
+    }
+   },
+   "power": {
+    "t_target": 2.0,
+    "trades_needed": 253,
+    "trades_per_year_observed": 6.305,
+    "years_needed": 40.1
+   },
+   "bootstrap_trades": {
+    "resamples": 10000,
+    "seed": 20260924,
+    "mean_ci95_pct": [
+     -4.1958,
+     9.9836
+    ],
+    "sum_ci95_pp": [
+     -58.7407,
+     139.771
+    ],
+    "p_mean_le_zero": 0.3438
+   },
+   "bootstrap_sharpe": {
+    "resamples": 2000,
+    "block_days": 20,
+    "seed": 20260924,
+    "sharpe_ci95": [
+     -1.0233,
+     1.9026
+    ],
+    "p_sharpe_le_zero": 0.2585
+   },
+   "random_timing": {
+    "trials": 5000,
+    "seed": 20260924,
+    "fee_per_side": 0.01,
+    "trade_count": 14,
+    "exposure_days": 314,
+    "period_days": 810,
+    "net_return_pct": {
+     "mean": -11.5613,
+     "p5": -67.5539,
+     "p50": -12.2138,
+     "p95": 46.3416
+    },
+    "max_drawdown_pct": {
+     "mean": 44.7821,
+     "p5": 20.7856,
+     "p50": 41.8714,
+     "p95": 78.119
+    },
+    "actual_net_return_pct": 25.5462,
+    "actual_max_drawdown_pct_daily": 36.0342,
+    "p_return_ge_actual": 0.149,
+    "p_drawdown_le_actual": 0.371
+   },
+   "constant_exposure": {
+    "exposure_fraction": 0.3845,
+    "fee_per_side": 0.01,
+    "net_return_pct": 12.4134,
+    "max_drawdown_pct": 23.0251
+   },
+   "yearly": [
+    {
+     "year": 2024,
+     "from": "2024-07-01",
+     "to": "2024-12-31",
+     "strategy_pct": 39.24,
+     "buy_hold_pct": 53.98
+    },
+    {
+     "year": 2025,
+     "from": "2024-12-31",
+     "to": "2025-12-31",
+     "strategy_pct": -17.05,
+     "buy_hold_pct": -17.57
+    },
+    {
+     "year": 2026,
+     "from": "2025-12-31",
+     "to": "2026-09-19",
+     "strategy_pct": 8.7,
+     "buy_hold_pct": -5.01
+    }
+   ]
+  }
+ }
+}

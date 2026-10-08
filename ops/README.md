@@ -16,7 +16,8 @@ By the end of this runbook the host:
 - is controlled only through Telegram or the API over an SSH tunnel; the API
   is never exposed to the network (§3);
 - pings a dead-man's switch every 5 minutes, backs up daily, prunes old images
-  weekly, and alerts on any failed job (§4, §5);
+  weekly, writes a daily forward-test report, and alerts on any failed job
+  (§4, §5);
 - is ready for the 14-day soak (§6).
 
 Before you start, have: a fresh Debian 13 host with a sudo account and your
@@ -27,6 +28,14 @@ offsite backups.
 Known limits: the systemd units and their sandboxing were written by
 inspection on a macOS machine and have not been verified on a real host
 (§4). Reboots after kernel updates are not automated (§1.1).
+
+The bot is capped at 2 GB RAM and 1.5 CPU cores. Read-only tools, including the
+daily forward report, are capped at 512 MB RAM and one CPU core, with one
+NumPy/BLAS worker thread. These are ceilings, not reserved memory: leave room
+for Debian, Docker and backups, observe peak memory during the soak, and keep
+the optional Jev worker disabled unless measured headroom permits it. Research
+backtests have a separate 2 GB ceiling; run them on a development machine,
+outside the VPS trading stack.
 
 ## 1. Host preparation
 
@@ -245,6 +254,14 @@ entries and no trading, until an operator explicitly starts it (§3.3). This is
 true after every container start or restart, including after a restore (see
 `ops/restore.sh`).
 
+Daily forward reports now maintain `runtime/market-data.sqlite` without a
+research container. Backups snapshot it with the trade databases and copy
+reports, the pinned window manifest and the STOP latch. Restore matching
+evidence alongside a trade database; database restore alone is incomplete.
+See [forward protocol v2](../docs/forward-test.md) for error recovery and
+explicit account capital. `make validate-report` exercises the real pinned
+Freqtrade database schema and H2 callback using temporary synthetic data.
+
 ## 3. Control
 
 ### 3.1 API: SSH tunnel only, never a public port
@@ -296,7 +313,8 @@ sudo cp /opt/schrodingers-quant/ops/systemd/*.service \
         /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now schrodingers-quant.service
-sudo systemctl enable --now sq-health.timer sq-backup.timer sq-retention.timer
+sudo systemctl enable --now sq-health.timer sq-backup.timer sq-retention.timer \
+  sq-forward-report.timer
 ```
 
 | Unit | Purpose | Schedule |
@@ -305,15 +323,62 @@ sudo systemctl enable --now sq-health.timer sq-backup.timer sq-retention.timer
 | `sq-health.timer` → `sq-health.service` | `ops/health_ping.py`: bot heartbeat and disk check, pings the dead-man's switch | every 5 minutes |
 | `sq-backup.timer` → `sq-backup.service` | `ops/backup.sh`: SQLite snapshot and config bundle, optional restic push | daily, 03:15 UTC |
 | `sq-retention.timer` → `sq-retention.service` | `ops/retention.sh --apply`: prune dangling Docker images | weekly |
+| `sq-forward-report.timer` → `sq-forward-report.service` | `ops/forward_report.sh`: forward paper-test report (`sq.live.forward`) | daily, 04:15 UTC |
 | `sq-alert@.service` | `health_ping.py --fail "<unit> failed"`, triggered by the above via `OnFailure=` | on failure of any of the above |
 
-Each of the four scheduled units sets `OnFailure=sq-alert@%n.service`, so a
+`sq-forward-report.service` runs the read-only forward report in the tools
+container (see [forward test](../docs/forward-test.md)) after the backup and
+writes `user_data/runtime/reports/forward-<UTC timestamp>.json`. It needs no
+credentials. Exit code 4 means a criterion (F1, F2 or F3) failed, STOP: the
+unit fails, `sq-alert@` runs, and the dead-man's switch is told. Exit code 1 is
+an error and alerts the same way. Like the other units, it has not been run on
+a real host.
+
+Once the daily report is configured, add these settings to
+`/etc/schrodingers-quant/ops.env`:
+
+```sh
+HEALTH_FORWARD_REPORT=/opt/schrodingers-quant/user_data/runtime/reports/forward-latest.json
+HEALTH_FORWARD_MAX_AGE_SECONDS=129600
+```
+
+The five-minute health check then requires a CONTINUE report generated within
+36 hours. STOP, a missing or malformed report, an error record, a future
+generation time, and a stale report all keep the monitor failed even when the
+bot heartbeat is fresh. This avoids the next healthy heartbeat clearing a
+forward-test STOP. The reporter also keeps the first STOP in a sibling
+`forward-stop.json` latch: while that file exists, even a fresh CONTINUE report
+cannot clear the failure. Investigate and record the incident, archive that
+latch, and require a fresh CONTINUE report before restarting entries. This check is
+disabled when `HEALTH_FORWARD_REPORT` is unset, so initial host setup can run
+before the first report exists. The check uses `generated_at` inside the JSON,
+so copying an old report does not refresh it. Other failed jobs still need
+their own persistent monitor checks if they must stay failed independently of
+the bot heartbeat.
+
+Two settings for it, both in `/etc/schrodingers-quant/ops.env`, which the unit
+reads if present:
+
+- `SQ_FORWARD_ARGS`: extra arguments for the report, word-split by systemd.
+  Set the forward window's start and initial account capital when the soak
+  begins, for example `SQ_FORWARD_ARGS=--since 2026-10-15 --initial-capital 10`.
+  Public candles are archived automatically in runtime/market-data.sqlite;
+  a manual candle file is only needed for verified historical imports/repair.
+  Without `--since`, the diagnostic window starts at the first order, so earlier
+  missed entries cannot be tested. Use an explicit start for the soak.
+- The report is written by the image's user (`ftuser`, uid 1000), not by
+  `sq`. Create the directory once and give it to that uid:
+  `sudo -u sq mkdir -p user_data/runtime/reports && sudo chown 1000:1000 user_data/runtime/reports`.
+  A `PermissionError` in the journal on the first run means this step was
+  skipped.
+
+Each of the scheduled units sets `OnFailure=sq-alert@%n.service`, so a
 failure of the unit itself, not just an unhealthy bot, also reaches the same
 dead-man's switch. Check status and logs with:
 
 ```sh
-systemctl status schrodingers-quant.service sq-health.timer sq-backup.timer sq-retention.timer
-journalctl -u sq-health.service -u sq-backup.service -u sq-retention.service --since -1d
+systemctl status schrodingers-quant.service sq-health.timer sq-backup.timer sq-retention.timer sq-forward-report.timer
+journalctl -u sq-health.service -u sq-backup.service -u sq-retention.service -u sq-forward-report.service --since -1d
 ```
 
 Not yet verified: `systemd-analyze verify` is unavailable outside Linux, so it
@@ -353,7 +418,10 @@ its name: `ops/restore.sh --local <backup-dir> --db live.sqlite`.
 
 See `ops/soak-checklist.md` for the 14-day soak procedure and its drills
 (container kill, reboot, network loss, restore from backup, disk-full
-simulation).
+simulation). During the soak, the daily forward report
+(`journalctl -u sq-forward-report.service --since -1d`) prints one summary
+line per day (window, trades, return, drawdown, F1 to F4, verdict) for the
+soak log. Its verdict must stay CONTINUE.
 
 ## Glossary
 

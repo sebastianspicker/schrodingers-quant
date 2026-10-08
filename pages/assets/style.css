@@ -177,7 +177,11 @@ section > p + p { margin-top: var(--s-3); }
   display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--s-2) var(--s-6);
   margin-bottom: var(--s-6);
 }
-.stats .note { grid-column: 1 / -1; }
+.stats .note, .stats .wide { grid-column: 1 / -1; }
+.stats[hidden] { display: none; }
+.range { font-weight: 400; color: var(--muted); }
+.stat-table th .range, .stat-table td .range { margin-left: var(--s-1); white-space: nowrap; }
+.stat-table .sub { display: block; font-size: var(--fs-xs); color: var(--muted); }
 .stats-note { color: var(--ink-2); }
 .stat-table { width: 100%; border-collapse: collapse; font-size: var(--fs-s); align-self: start; }
 .stat-table caption { text-align: left; font-weight: 600; font-size: var(--fs-s); padding-bottom: var(--s-2); }

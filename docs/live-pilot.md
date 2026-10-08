@@ -139,10 +139,20 @@ make reconcile   # base + live + config/local/secrets.json, in the tools contain
 For each run, record the timestamp, the exit code, the full JSON report and,
 on a mismatch, the remediation taken before the next entry is allowed.
 
+Run the daily forward report alongside it, with the live layers, so that it
+reads `live.sqlite`:
+
+```sh
+make forward-report ARGS="--config /freqtrade/config/base.json --config /freqtrade/config/live.json"
+```
+
+It is read-only and needs no credentials. Exit code 4 is a STOP (see §6). It
+has not yet been run against a real database.
 ## 5. Evidence to record throughout the pilot
 
 - Every preflight run (JSON report, exit code, date).
 - Every reconciliation run (JSON report, exit code, date).
+- Every daily forward report (JSON report, exit code, date).
 - Each drill's timeline and outcome.
 - Daily or per trade: entry and exit fills, fees paid, realized profit and
   loss, drawdown.
@@ -166,6 +176,10 @@ maintainer's explicit review, if any of the following occurs:
   trades).
 - Any doubt about whether the bot's live orders match its logged or database
   state.
+- The daily forward report (`make forward-report`,
+  [forward test](forward-test.md)) reports STOP: F1 (an entry without a
+  signal), F2 (realized round-trip cost above 2.0 %) or F3 (drawdown above the
+  K2 limit).
 
 Continuing or scaling the pilot past its initial scope requires an explicit
 maintainer decision; it is never automatic.

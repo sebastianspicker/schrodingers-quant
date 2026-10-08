@@ -6,13 +6,13 @@ on:
     paths:
       - ".github/workflows/pages.yml"
       - "pages/**"
+      - "src/sq/research/desk.py"
       - "research/experiments/H1/equity-curves.json"
+      - "research/experiments/H1/statistics.json"
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
@@ -36,6 +36,10 @@ jobs:
           path: build/pages
 
   deploy:
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

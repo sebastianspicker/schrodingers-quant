@@ -34,9 +34,12 @@ def equity_curve(trades: pd.DataFrame, candles: pd.DataFrame, wallet: float) -> 
     return equity
 
 
-def max_drawdown_pct(series: pd.Series) -> float:
+def max_drawdown_pct(series: pd.Series, initial: float | None = None) -> float:
     """Peak-to-trough percentage drawdown of an equity or price series."""
-    return float(((series.cummax() - series) / series.cummax()).max() * 100)
+    peak = series.cummax()
+    if initial is not None:
+        peak = peak.clip(lower=initial)
+    return float(((peak - series) / peak).max() * 100)
 
 
 def mtm_report(
@@ -68,7 +71,7 @@ def mtm_report(
         "final_equity": round(float(equity.iloc[-1]), 2),
         "net_return_pct": round((growth - 1) * 100, 4),
         "cagr_pct": round((growth ** (1 / years) - 1) * 100, 4) if growth > 0 else None,
-        "mtm_max_drawdown_pct": round(max_drawdown_pct(equity), 4),
+        "mtm_max_drawdown_pct": round(max_drawdown_pct(equity, initial=wallet), 4),
     }
 
 

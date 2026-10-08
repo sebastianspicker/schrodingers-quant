@@ -2,11 +2,14 @@
 
 import argparse
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from freqtrade.configuration import Configuration
-from freqtrade.configuration.config_validation import validate_config_consistency
-from freqtrade.enums import RunMode
-from freqtrade.resolvers import StrategyResolver
+if TYPE_CHECKING:
+    from freqtrade.enums import RunMode
+
+# Freqtrade is imported inside the functions that need it, so the pure checks
+# below (`check_tracked_invariants`, `check_merged_secrets`) are importable and
+# unit-testable on a development machine without the pinned image.
 
 TRACKED_BASE_CONFIG = Path(__file__).resolve().parents[2] / "config" / "base.json"
 
@@ -14,8 +17,10 @@ PLACEHOLDER_JWT_SECRET_KEY = "REPLACE_WITH_RANDOM_32_CHARS_KEY"
 MIN_JWT_SECRET_KEY_LENGTH = 32
 
 
-def load_config(paths: list[Path | str], run_mode: RunMode = RunMode.DRY_RUN) -> dict:
+def load_config(paths: list[Path | str], run_mode: RunMode | None = None) -> dict:
     """Load and merge Freqtrade config files; Freqtrade merges later files over earlier.
+
+    `run_mode` defaults to `RunMode.DRY_RUN`.
 
     Pins `user_data_dir` to the image's `/freqtrade/user_data` (the container
     path the configs already use) instead of Freqtrade's default
@@ -23,9 +28,12 @@ def load_config(paths: list[Path | str], run_mode: RunMode = RunMode.DRY_RUN) ->
     `/workspace`, where Freqtrade's creation of user_data subfolders would
     fail.
     """
+    from freqtrade.configuration import Configuration
+    from freqtrade.enums import RunMode
+
     return Configuration(
         {"config": [str(path) for path in paths], "user_data_dir": "/freqtrade/user_data"},
-        run_mode,
+        run_mode if run_mode is not None else RunMode.DRY_RUN,
     ).get_config()
 
 
@@ -81,6 +89,9 @@ def load_strategy(config: dict):
     """Load and consistency-check the strategy named in config. Raises on failure."""
     # Raise failures directly: some Freqtrade utility commands log errors yet
     # return success. Use trading-mode validation without creating an Exchange.
+    from freqtrade.configuration.config_validation import validate_config_consistency
+    from freqtrade.resolvers import StrategyResolver
+
     strategy = StrategyResolver.load_strategy(config)
     validate_config_consistency(config)
     return strategy
