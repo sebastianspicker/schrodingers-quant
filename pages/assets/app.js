@@ -9,6 +9,7 @@ const TRADE_SCALE = 70; // fixed ±% domain for the trade bars, so runs compare
 const state = { period: "heldout", cost: "base" };
 let data = null;
 let stats = null;
+let physics = null;
 
 const eur = new Intl.NumberFormat("en-GB", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 const minus = (s) => s.replace("-", "−");
@@ -374,6 +375,244 @@ function renderAssessment() {
   tables.hidden = false;
 }
 
+// Market structure and null models (physics.json), as display strings. Pure, so it can be checked without a DOM.
+// A missing block gives dashes and a note, never an exception. A cell is a string or { mid, range }.
+const DASH = "—";
+const at = (o, ...keys) => keys.reduce((a, k) => (a === null || a === undefined ? undefined : a[k]), o);
+const num = (v, digits = 2) => (ok(v) ? fixed(v, digits) : DASH);
+const pc = (v, signed = true) => (ok(v) ? pct(v, signed) : DASH);
+const shr = (v) => (ok(v) ? minus(`${(v * 100).toFixed(v > 0 && v < 0.1 ? 1 : 0)} %`) : DASH); // 15 %, 4.2 %
+const cnt = (v) => (ok(v) ? (v >= 10 ? String(Math.round(v)) : v.toFixed(1)) : DASH);
+const span95 = (d, f) => (d && ok(d.p50, d.p5, d.p95) ? { mid: f(d.p50), range: `(${f(d.p5)} to ${f(d.p95)})` } : { mid: DASH, range: "" });
+const pair = (r, f) => (Array.isArray(r) && ok(r[0], r[1]) ? `${f(r[0])} to ${f(r[1])}` : DASH);
+const FACT_ROWS = [
+  ["vol", "Annualised volatility"],
+  ["skew", "Skewness"],
+  ["kurt", "Excess kurtosis"],
+  ["tail", "Tail index, left / right"],
+  ["acf1", "Autocorrelation of returns, lag 1 (4h)"],
+  ["acf6", "Autocorrelation of returns, lag 6 (1 day)"],
+  ["aacf1", "Autocorrelation of absolute returns, lag 1 (4h)"],
+  ["aacf6", "Autocorrelation of absolute returns, lag 6 (1 day)"],
+  ["hurst", "Hurst exponent of returns"],
+  ["hurst-abs", "Hurst exponent of absolute returns"],
+  ["entropy", "Permutation entropy"],
+  ["mrw", "MRW intermittency λ²"],
+];
+
+function factCells(f) {
+  const withShuffle = (v, r, digits) => ({ mid: num(v, digits), range: Array.isArray(r) && ok(r[0], r[1]) ? `(shuffle ${num(r[0], digits)} to ${num(r[1], digits)})` : "" });
+  const tl = at(f, "tail_index", "left");
+  const tr = at(f, "tail_index", "right");
+  return {
+    vol: pc(at(f, "annualised_volatility_pct"), false),
+    skew: num(at(f, "skewness")),
+    kurt: num(at(f, "excess_kurtosis")),
+    tail: ok(tl, tr) ? `${num(tl, 1)} / ${num(tr, 1)}` : DASH,
+    acf1: num(at(f, "acf_returns", "1")),
+    acf6: num(at(f, "acf_returns", "6")),
+    aacf1: num(at(f, "acf_abs_returns", "1")),
+    aacf6: num(at(f, "acf_abs_returns", "6")),
+    hurst: withShuffle(at(f, "hurst", "returns"), at(f, "hurst", "shuffle_range95"), 2),
+    "hurst-abs": num(at(f, "hurst", "abs_returns")),
+    entropy: withShuffle(at(f, "permutation_entropy", "value"), at(f, "permutation_entropy", "shuffle_range95"), 4),
+    mrw: num(at(f, "mrw_lambda2"), 3),
+  };
+}
+
+function physicsText(p, period, runKey) {
+  const cost = String(runKey).split("-")[1];
+  const runLabel = `${PERIODS[period] ?? period}, ${COSTS[cost] ?? cost}`;
+  const missing = (block) => `No ${block} block in physics.json.`;
+  const span = (f) => (f && f.start && f.end ? `${f.start} → ${f.end}${ok(f.candles) ? `, ${f.candles} candles` : ""}` : "");
+
+  const sel = at(p, "stylized_facts", period);
+  const full = at(p, "stylized_facts", "full");
+  const selCells = factCells(sel);
+  const fullCells = factCells(full);
+  const scales = at(sel, "hurst", "scales") ?? at(full, "hurst", "scales");
+  const facts = {
+    head: PERIODS[period] ?? String(period),
+    selSpan: span(sel),
+    fullSpan: span(full),
+    rows: FACT_ROWS.map(([key, label]) => ({ label, sel: selCells[key], full: fullCells[key] })),
+    note: !at(p, "stylized_facts")
+      ? missing("stylized_facts")
+      : !sel
+        ? `No stylized facts for the ${(PERIODS[period] ?? period).toLowerCase()} period.`
+        : Array.isArray(scales) && ok(scales[0], scales[1])
+          ? `Hurst exponents are estimated over scales of ${scales[0]} to ${scales[1]} candles.`
+          : "",
+  };
+
+  const nullRun = at(p, "null_models", runKey);
+  const obs = at(nullRun, "observed");
+  const blockDays = at(nullRun, "block_candles") / 6;
+  const nullModels = {
+    present: Boolean(nullRun),
+    observed: nullRun
+      ? `H1 in this run (${runLabel}): net return ${pc(at(obs, "net_return_pct"))}, marked-to-market max drawdown ${pc(at(obs, "mtm_max_drawdown_pct"), false)}, ` +
+        `${ok(at(obs, "trades")) ? obs.trades : DASH} trades. ${ok(at(nullRun, "trials")) ? `${nullRun.trials} random paths per model` : "Random paths per model: " + DASH}` +
+        `${ok(blockDays) ? `, blocks of ${+blockDays.toFixed(1)} days` : ""}.`
+      : "",
+    rows: Object.values(at(nullRun, "models") ?? {}).map((m) => ({
+      label: at(m, "label") ?? DASH,
+      ge: shr(at(m, "share_return_ge")),
+      le: shr(at(m, "share_drawdown_le")),
+      both: shr(at(m, "share_both")),
+      ret: span95(at(m, "return_pct"), (v) => pc(v)),
+      dd: span95(at(m, "drawdown_pct"), (v) => pc(v, false)),
+      trades: cnt(at(m, "trades", "p50")),
+    })),
+  };
+  nullModels.note = !nullRun ? "" : nullModels.rows.length ? "A share near 50 % would mean random markets match H1 as often as not." : missing("models");
+
+  const proto = at(p, "forward_calibration", "protocol");
+  const calib = {
+    protocol: proto
+      ? `Protocol: ${num(proto.trades_required, 0)} closed trades required, F3 drawdown limit ${num(proto.f3_drawdown_limit_pct, 2)} %, ` +
+        `P2 factor ${num(proto.p2_factor, 1)}, at most ${num(proto.max_years, 0)} years, fee ${ok(proto.fee) ? `${(proto.fee * 100).toFixed(1)} %` : DASH} per side.`
+      : "",
+    rows: Object.values(at(p, "forward_calibration", "models") ?? {}).map((m) => ({
+      label: at(m, "label") ?? DASH,
+      reach: shr(at(m, "share_reached_required_trades")),
+      years: span95(at(m, "years_to_required_trades"), cnt),
+      perYear: span95(at(m, "trades_per_year"), cnt),
+      f3: shr(at(m, "share_f3_stop")),
+      p1: shr(at(m, "share_p1_pass")),
+      p2: shr(at(m, "share_p2_pass")),
+      go: shr(at(m, "share_go")),
+    })),
+  };
+  calib.note = !at(p, "forward_calibration") ? missing("forward_calibration") : calib.rows.length ? "" : missing("forward_calibration.models");
+
+  const fp = at(p, "first_passage");
+  const days = [...new Set([...Object.keys(at(fp, "analytic") ?? {}), ...Object.keys(at(fp, "simulated") ?? {})])].sort((a, b) => a - b);
+  const stop = at(fp, "stop_pct");
+  const firstPassage = {
+    rows: days.map((d) => ({ days: `${d} days`, analytic: shr(at(fp, "analytic", d)), simulated: shr(at(fp, "simulated", d)) })),
+    note: !fp
+      ? missing("first_passage")
+      : `Chance of touching the ${ok(stop) ? `${minus(`−${stop} %`)} ` : ""}stop without drift at the window's volatility (${pc(at(fp, "sigma_annualised_pct"), false)} a year)` +
+        `${ok(at(fp, "trials")) ? `; ${fp.trials} simulated paths` : ""}. ` +
+        `Observed median holding time: ${ok(at(fp, "observed_median_holding_days")) ? `${cnt(fp.observed_median_holding_days)} days` : DASH}.`,
+  };
+
+  const g = at(p, "growth", runKey);
+  const tl = at(g, "trade_level");
+  const dl = at(g, "daily_level");
+  const kl = at(tl, "kelly") ?? tl; // nested under trade_level.kelly; flat keys tolerated
+  const fr = at(kl, "growth_at_fractions_pct");
+  const growth = {
+    run: runLabel,
+    "g-mean": pc(at(tl, "mean_pct")),
+    "g-time": pc(at(tl, "time_average_growth_pct")),
+    "g-drag": pc(at(tl, "volatility_drag_pct"), false),
+    "g-kelly": num(at(kl, "kelly_fraction")),
+    "g-kelly-un": num(at(kl, "kelly_fraction_unconstrained")),
+    "g-kelly-ci": pair(at(kl, "kelly_ci95"), (v) => num(v)),
+    "g-zero": shr(at(kl, "share_resamples_zero")),
+    "g-fractions": fr ? ["0.25", "0.5", "0.75", "1.0"].map((k) => pc(fr[k])).join(" / ") : DASH,
+    "d-mean": pc(at(dl, "annualised_mean_pct")),
+    "d-growth": pc(at(dl, "annualised_growth_pct")),
+    "d-drag": pc(at(dl, "volatility_drag_pct"), false),
+    "d-years": num(at(dl, "years"), 1),
+    frontier: (at(g, "frontier") ?? []).map((f) => ({
+      fraction: num(at(f, "fraction")),
+      growth: pc(at(f, "annualised_growth_pct")),
+      dd: pc(at(f, "max_drawdown_pct"), false),
+      multiple: ok(at(f, "terminal_multiple")) ? `${num(f.terminal_multiple)}×` : DASH,
+    })),
+    note: !at(p, "growth") ? missing("growth") : !g ? "No growth figures for this run." : at(g, "qualification") ?? "",
+  };
+
+  const led = at(p, "ledger");
+  const ledger = {
+    "l-trials": ok(at(led, "trials_counted")) ? String(led.trials_counted) : DASH,
+    "l-sharpe": num(at(led, "observed_sharpe_annualised")),
+    "l-emax": num(at(led, "expected_max_sharpe_annualised")),
+    "l-dsr": shr(at(led, "deflated_sharpe_probability")),
+    entries: (at(led, "entries") ?? []).map((e) => `${at(e, "id") ?? DASH} · ${at(e, "kind") ?? DASH}${at(e, "counted") === false ? " (not counted)" : ""}`),
+    note: !led ? missing("ledger") : at(led, "note") ?? "",
+  };
+
+  return { facts, nullModels, calib, firstPassage, growth, ledger };
+}
+
+function renderPhysics() {
+  const status = document.getElementById("physics-status");
+  const body = document.getElementById("physics-body");
+  if (!physics) {
+    body.hidden = true;
+    status.hidden = false;
+    status.textContent = "physics.json not loaded.";
+    return;
+  }
+  const t = physicsText(physics, state.period, `${state.period}-${state.cost}`);
+  const set = (field, value) => {
+    for (const node of body.querySelectorAll(`[data-p="${field}"]`)) node.textContent = value;
+  };
+  const cell = (tag, className, value) => {
+    const node = html(tag, className);
+    if (typeof value === "string") node.textContent = value;
+    else {
+      node.textContent = value.mid;
+      if (value.range) node.append(" ", html("span", "range", value.range));
+    }
+    return node;
+  };
+  const fill = (id, rows, width, build) => {
+    const tbody = document.getElementById(id);
+    tbody.textContent = "";
+    for (const row of rows.length ? rows.map(build) : [[DASH, ...Array(width - 1).fill(DASH)]]) {
+      const tr = document.createElement("tr");
+      row.forEach((value, i) => {
+        const c = cell(i === 0 ? "th" : "td", i === 0 ? "" : "num", value);
+        if (i === 0) c.scope = "row";
+        tr.appendChild(c);
+      });
+      tbody.appendChild(tr);
+    }
+  };
+
+  set("facts-sel-head", t.facts.head);
+  set("facts-sel-span", t.facts.selSpan);
+  set("facts-full-span", t.facts.fullSpan);
+  set("facts-note", t.facts.note);
+  fill("physics-facts-body", t.facts.rows, 3, (r) => [r.label, r.sel, r.full]);
+
+  const nullStatus = document.getElementById("physics-null-status");
+  document.getElementById("physics-null-wrap").hidden = !t.nullModels.present;
+  nullStatus.hidden = t.nullModels.present;
+  nullStatus.textContent = t.nullModels.present ? "" : "No null-model run for this cost level.";
+  set("null-observed", t.nullModels.observed);
+  set("null-note", t.nullModels.note);
+  fill("physics-null-body", t.nullModels.rows, 7, (r) => [r.label, r.ge, r.le, r.both, r.ret, r.dd, r.trades]);
+
+  set("calib-protocol", t.calib.protocol);
+  set("calib-note", t.calib.note);
+  fill("physics-calib-body", t.calib.rows, 8, (r) => [r.label, r.reach, r.years, r.perYear, r.f3, r.p1, r.p2, r.go]);
+
+  set("fp-note", t.firstPassage.note);
+  fill("physics-fp-body", t.firstPassage.rows, 3, (r) => [r.days, r.analytic, r.simulated]);
+
+  for (const key of ["g-mean", "g-time", "g-drag", "g-kelly", "g-kelly-un", "g-kelly-ci", "g-zero", "g-fractions", "d-mean", "d-growth", "d-drag", "d-years"]) {
+    set(key, t.growth[key]);
+  }
+  set("growth-run", `(${t.growth.run})`);
+  set("growth-note", t.growth.note);
+  fill("physics-frontier-body", t.growth.frontier, 4, (r) => [r.fraction, r.growth, r.dd, r.multiple]);
+
+  for (const key of ["l-trials", "l-sharpe", "l-emax", "l-dsr"]) set(key, t.ledger[key]);
+  set("ledger-note", t.ledger.note);
+  const list = document.getElementById("physics-ledger-list");
+  list.textContent = "";
+  for (const entry of t.ledger.entries) list.appendChild(html("li", "", entry));
+
+  status.hidden = true;
+  body.hidden = false;
+}
+
 function renderTrades(run) {
   document.getElementById("trades-title").textContent = `Trades (${run.trades.length})`;
   const body = document.getElementById("trades-body");
@@ -417,6 +656,7 @@ function render() {
   renderStats(run);
   renderTrades(run);
   renderAssessment();
+  renderPhysics();
 
   const equity = document.getElementById("equity-chart");
   drawChart(equity, run, {
@@ -486,6 +726,7 @@ function showError(message) {
   }
   document.querySelector(".trades").hidden = true;
   renderAssessment();
+  renderPhysics();
   document.querySelector('#stats [data-f="status"]').textContent =
     "No run loaded. The decision table under Protocol comes from the experiment record and is unaffected.";
 }
@@ -530,10 +771,12 @@ const getJson = (url) =>
 Promise.all([
   getJson("data/equity-curves.json"),
   getJson("data/statistics.json").catch(() => null), // the assessment is optional: the rest of the page renders without it
+  getJson("data/physics.json").catch(() => null), // so are the market-structure diagnostics
 ])
-  .then(([json, statistics]) => {
+  .then(([json, statistics, diagnostics]) => {
     data = json;
     stats = statistics;
+    physics = diagnostics;
     render();
   })
   .catch((err) => showError(`Could not load data/equity-curves.json (${err.message}).`));

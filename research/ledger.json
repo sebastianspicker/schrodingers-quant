@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "as_of": "2026-10-08",
+  "description": "Every evaluation of a strategy rule on recorded data, in order. The deflated Sharpe ratio (physics.json, ledger block) charges H1's held-out Sharpe for the number of counted trials. 'counted' means the run evaluated a rule on price data and could have informed a selection; cost variants of the same trades, benchmarks and predeclared-but-unrun hypotheses are listed but not counted. Sharpe ratios are the annualised daily figures of statistics.json where one exists; the cross-trial Sharpe variance that the expected maximum needs is estimated from the counted entries that have one (three, from different periods, one of them the held-out run itself), which is a weak basis and is disclosed in ADR-0008.",
+  "entries": [
+    {
+      "id": "H1-train-base",
+      "date": "2026-09-24",
+      "kind": "hypothesis",
+      "description": "H1 20/10-day channel breakout, BTC/EUR, train period, 0.5 % per side",
+      "period": "2020-01-01..2023-01-01",
+      "sharpe_annualised": 1.1469,
+      "counted": true
+    },
+    {
+      "id": "H1-train-stress",
+      "date": "2026-09-24",
+      "kind": "cost_variant",
+      "description": "Same trades at 1.0 % per side",
+      "period": "2020-01-01..2023-01-01",
+      "sharpe_annualised": 1.045,
+      "counted": false
+    },
+    {
+      "id": "H1-validation-base",
+      "date": "2026-09-24",
+      "kind": "hypothesis",
+      "description": "H1 on the validation period, 0.5 % per side",
+      "period": "2023-01-01..2024-07-01",
+      "sharpe_annualised": 1.2916,
+      "counted": true
+    },
+    {
+      "id": "H1-validation-stress",
+      "date": "2026-09-24",
+      "kind": "cost_variant",
+      "description": "Same trades at 1.0 % per side",
+      "period": "2023-01-01..2024-07-01",
+      "sharpe_annualised": 1.0958,
+      "counted": false
+    },
+    {
+      "id": "H1-sensitivity-10x5",
+      "date": "2026-09-24",
+      "kind": "sensitivity",
+      "description": "10/5-day channels, train + validation span (reported, never used to select)",
+      "period": "2020-01-01..2024-07-01",
+      "sharpe_annualised": null,
+      "counted": true
+    },
+    {
+      "id": "H1-sensitivity-55x20",
+      "date": "2026-09-24",
+      "kind": "sensitivity",
+      "description": "55/20-day channels, train + validation span (reported, never used to select)",
+      "period": "2020-01-01..2024-07-01",
+      "sharpe_annualised": null,
+      "counted": true
+    },
+    {
+      "id": "H1-eth-robustness",
+      "date": "2026-09-24",
+      "kind": "robustness",
+      "description": "H1's channels on ETH/EUR, train + validation span",
+      "period": "2020-01-01..2024-07-01",
+      "sharpe_annualised": null,
+      "counted": true
+    },
+    {
+      "id": "H1-heldout-compounding",
+      "date": "2026-09-24",
+      "kind": "rerun",
+      "description": "First held-out run, compounding stake contrary to H1.md; superseded (ADR-0004)",
+      "period": "2024-07-01..2026-09-20",
+      "sharpe_annualised": null,
+      "counted": true
+    },
+    {
+      "id": "H1-heldout-base",
+      "date": "2026-09-24",
+      "kind": "hypothesis",
+      "description": "Held-out run with the declared fixed stake, 0.5 % per side; the GO (marginal) record (ADR-0005)",
+      "period": "2024-07-01..2026-09-20",
+      "sharpe_annualised": 0.7755,
+      "counted": true
+    },
+    {
+      "id": "H1-heldout-stress",
+      "date": "2026-09-24",
+      "kind": "cost_variant",
+      "description": "Same trades at 1.0 % per side",
+      "period": "2024-07-01..2026-09-20",
+      "sharpe_annualised": 0.5441,
+      "counted": false
+    },
+    {
+      "id": "buy-and-hold",
+      "date": "2026-09-24",
+      "kind": "benchmark",
+      "description": "Buy-and-hold, random timing at equal exposure and constant exposure (ADR-0006); comparators, not rules",
+      "period": "all",
+      "sharpe_annualised": null,
+      "counted": false
+    },
+    {
+      "id": "H2-predeclared",
+      "date": "2026-10-08",
+      "kind": "hypothesis",
+      "description": "Volatility-targeted sizing of H1's trades; predeclared, judged on forward data only, not yet run",
+      "period": "forward",
+      "sharpe_annualised": null,
+      "counted": false
+    },
+    {
+      "id": "physics-nulls",
+      "date": "2026-10-08",
+      "kind": "benchmark",
+      "description": "Stylized facts, surrogate and model null distributions, forward-protocol calibration (ADR-0008); they change the test, not the rule",
+      "period": "all",
+      "sharpe_annualised": null,
+      "counted": false
+    }
+  ]
+}

@@ -215,6 +215,17 @@ def build_report(experiment: Path, monthly_cost_eur: float = 0) -> dict:
         raise ValueError(
             "statistics source hash differs from equity-curves.json; rebuild statistics"
         )
+    # The growth block comes from the tracked physics.json (make physics, numpy),
+    # so the desk itself stays standard-library only; it is optional, but a stale
+    # file is refused like stale statistics.
+    physics, physics_hash = {}, None
+    physics_path = experiment / "physics.json"
+    if physics_path.exists():
+        physics, physics_hash = read_json(physics_path)
+        if physics.get("equity_curves_sha256") != curves_hash:
+            raise ValueError("physics source hash differs from equity-curves.json; rebuild physics")
+        if not isinstance(physics.get("growth"), dict):
+            raise ValueError("physics.json has no growth block; rebuild physics")
     if curves.get("timeframe", "4h") != "4h":
         raise ValueError("desk expects the archived 4h experiment contract")
     notional = number(curves["notional_eur"], "notional EUR", 0.000001, 1e12)
@@ -230,6 +241,7 @@ def build_report(experiment: Path, monthly_cost_eur: float = 0) -> dict:
         "initial_notional_eur": notional,
         "source_sha256": curves_hash,
         "statistics_sha256": stats_hash,
+        "physics_sha256": physics_hash,
         "monthly_cost_eur": monthly_cost_eur,
         "methods": {
             "risk": "DAILY end marks plus initial capital; 4h recorded drawdowns remain "
@@ -241,6 +253,10 @@ def build_report(experiment: Path, monthly_cost_eur: float = 0) -> dict:
             "(sleeve period profit / elapsed years). This is an observed simple cash rate, "
             "not CAGR or a future expected return; null means no positive historical cash rate. "
             "Sensitivity uses hypothetical capital, linear fills/costs, no taxes or cash yield.",
+            "growth": "Read from the tracked physics.json (make physics): time-average (log) "
+            "growth against the ensemble mean per trade; Kelly fraction capped at 1 (no "
+            "leverage) with a trade bootstrap; compounding frontier on the daily marks. "
+            "Retrospective rescaling of the recorded path, not a new backtest.",
             "months": "Monthly close-to-close percent returns; first starts at initial capital. "
             "Excess is strategy minus buy-and-hold in percentage points, not estimated alpha. "
             "Multiply monthly growth factors to reconcile cumulative return; do not sum them.",
@@ -269,6 +285,7 @@ def build_report(experiment: Path, monthly_cost_eur: float = 0) -> dict:
             "evidence": evidence(stats["runs"][name]),
             "sleeves": sleeve_scenarios(run, notional, monthly_cost_eur),
             "monthly": monthly_returns(run, notional),
+            "growth": physics.get("growth", {}).get(name) if physics else None,
         }
     return report
 
@@ -343,6 +360,40 @@ def markdown(report: dict) -> str:
                 f"| {month['month']} | {'yes' if month['partial_month'] else 'no'} "
                 f"| {fmt(month['strategy_pct'])} | {fmt(month['buy_hold_pct'])} "
                 f"| {fmt(month['excess_pp'])} |"
+            )
+        growth = run["growth"]
+        lines += ["", "### Growth and sizing", ""]
+        if growth is None:
+            lines.append(
+                "Not available: physics.json is missing for this experiment (make physics)."
+            )
+            lines.append("")
+            continue
+        kelly = growth["trade_level"]["kelly"]
+        lines += [
+            f"Per trade: mean {fmt(growth['trade_level']['mean_pct'])}%, time-average growth "
+            f"{fmt(growth['trade_level']['time_average_growth_pct'])}% "
+            f"(volatility drag {fmt(growth['trade_level']['volatility_drag_pct'])} pp).",
+        ]
+        if kelly["kelly_fraction"] is None:
+            lines.append("Kelly fraction: n/a (fewer than two trades).")
+        else:
+            lines.append(
+                f"Kelly fraction {kelly['kelly_fraction']:.2f} (no leverage; unconstrained "
+                f"{kelly['kelly_fraction_unconstrained']:.2f}), 95% bootstrap interval "
+                f"{kelly['kelly_ci95']}; {100 * kelly['share_resamples_zero']:.1f}% of "
+                "resamples say do not trade."
+            )
+        lines += [
+            growth["qualification"],
+            "",
+            "| Fraction | Annualised growth % | Compounding max DD % |",
+            "| ---: | ---: | ---: |",
+        ]
+        for point in growth["frontier"]:
+            lines.append(
+                f"| {point['fraction']:.2f} | {fmt(point['annualised_growth_pct'])} "
+                f"| {fmt(point['max_drawdown_pct'])} |"
             )
         lines.append("")
     lines += ["## Methods and provenance", ""]

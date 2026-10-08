@@ -24,7 +24,15 @@ This directory holds research records and inputs, no code. The code lives in
   (`record.md`, `*.json`); raw Freqtrade export data stays in the ignored
   `user_data/backtest_results/`. `experiments/H2/` will hold H2's records, and
   does not exist yet.
-- `data-manifest.json`: provenance of the proxy OHLCV data (ADR-0002).
+- `data-manifest.json`: provenance of the proxy OHLCV data (ADR-0002), including
+  the tracked copy below.
+- `data/`: `binance-BTC_EUR-4h.csv.gz`, the same Binance 4h history the research
+  container downloads, tracked so that `make physics` and its drift test run on
+  any machine without Docker, with its own `data/manifest.json` (ADR-0008); the
+  pinned `data-manifest.json` above is untouched because the H1 result files
+  hash it.
+- `ledger.json`: every evaluation of a rule on recorded data, in order, and
+  whether it counts as a trial for the deflated Sharpe ratio (ADR-0008).
 Every research command is `make research ARGS="<subcommand>"`, which runs
 `python -m sq.research <subcommand>` in the `research` Compose service (no
 argument lists the subcommands). That service uses the pinned image and mounts
@@ -40,3 +48,12 @@ random-timing and constant-exposure benchmarks, power analysis). `make stats`
 rebuilds it deterministically from `equity-curves.json` without Docker, and a
 unit test fails if the tracked file drifts from a fresh build
 ([ADR-0006](../docs/adr/0006-evidence-standard.md)).
+
+`experiments/H1/physics.json` is the physics-informed assessment
+([ADR-0008](../docs/adr/0008-physics-informed-nulls.md), [physics](../docs/physics.md)):
+stylized facts of the market, H1 replayed on surrogate and simulated markets
+without an edge, the forward protocol's false-GO rate under those markets, a
+first-passage check of the stop, growth and Kelly figures, and the trials
+ledger. `make physics` rebuilds it from `data/` and the recorded curves without
+Docker (a few minutes); a unit test rebuilds the cheap sections and a fixed
+prefix of every Monte Carlo section and fails if the tracked file drifts.

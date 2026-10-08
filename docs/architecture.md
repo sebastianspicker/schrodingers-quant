@@ -23,7 +23,7 @@ only when a drill shows a gap in Freqtrade.
 | Research | `research/` (hypotheses, configs, records), `sq.research` (code) | development machine, service `research` | `research/experiments/`, `user_data/{data,backtest_results}` | Binance/Kraken public data |
 | Host operations | `ops/` | Debian 13 host, systemd | `user_data/runtime/backups/`, `user_data/runtime/reports/` | Docker, dead-man's switch, restic |
 | Unit tests | `tests/` | development machine and CI, no Docker (`make test`) | nothing | the code under `src/`, `ops/` and `user_data/strategies/` |
-| Demo site | `pages/`, `pages/build.sh`, `.github/workflows/pages.yml` | GitHub Pages, static | nothing at runtime | reads `research/experiments/H1/equity-curves.json` at build time |
+| Demo site | `pages/`, `pages/build.sh`, `.github/workflows/pages.yml` | GitHub Pages, static | nothing at runtime | reads `research/experiments/H1/{equity-curves,statistics,physics}.json` at build time |
 
 ### `sq` package
 
@@ -39,6 +39,8 @@ only when a drill shows a gap in Freqtrade.
 | `sq.research.pipeline` | Runs Freqtrade (backtesting, bias analyses) in the research container and writes every record: `<run>.json`, `mtm-<run>.json`, benchmarks, data manifest, proxy check, demo equity curves | `python -m sq.research <subcommand>` (`make research ARGS=…`) |
 | `sq.research.metrics` | Pure metrics: fixed-notional equity curve, marked-to-market drawdown, buy-and-hold, backtest summary | — |
 | `sq.research.statistics` | Pure numpy/pandas, so it runs without the image: bootstrap intervals, block-bootstrap Sharpe, exposure-matched random-timing and constant-exposure benchmarks, power analysis; builds `statistics.json` from the recorded curves ([ADR-0006](adr/0006-evidence-standard.md)) | `make stats` |
+| `sq.research.breakout`, `proxy_data` | Pure replay of H1's rules as Freqtrade executes them, verified against every recorded trade (`tests/test_breakout.py`); loader of the tracked proxy candles `research/data/` | — |
+| `sq.research.stylized`, `nulls`, `growth`, `ledger`, `physics` | Physics-informed assessment without the image: stylized facts (tails, Hurst, entropy, MRW), surrogate and fitted-model nulls, forward-protocol calibration, first-passage check, growth/Kelly frontier, research-trials ledger with the deflated Sharpe ratio; builds `physics.json` ([ADR-0008](adr/0008-physics-informed-nulls.md), [physics](physics.md)) | `make physics` |
 | `sq.research.provenance` | Image reference and file hashes stamped on every record | — |
 | `sq.research.data_manifest`, `proxy_check`, `equity_curves` | Proxy-data provenance, Binance-vs-Kraken check (ADR-0002), demo curves that must reproduce the record | via the pipeline |
 | `sq.research.jev_evaluation` | Offline baseline-vs-filter comparison using only assessments available before entry | `make research ARGS="jev-evaluate …"` |

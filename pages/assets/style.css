@@ -183,6 +183,10 @@ section > p + p { margin-top: var(--s-3); }
 .stat-table th .range, .stat-table td .range { margin-left: var(--s-1); white-space: nowrap; }
 .stat-table .sub { display: block; font-size: var(--fs-xs); color: var(--muted); }
 .stats-note { color: var(--ink-2); }
+.stat-table thead th .range { white-space: normal; }
+.stat-table tbody th { min-width: 9rem; }
+.ledger { list-style: none; padding: 0; margin: var(--s-3) 0 0; display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-4); font-size: var(--fs-xs); color: var(--muted); }
+#physics-body > .stat-table { max-width: 40rem; }
 .stat-table { width: 100%; border-collapse: collapse; font-size: var(--fs-s); align-self: start; }
 .stat-table caption { text-align: left; font-weight: 600; font-size: var(--fs-s); padding-bottom: var(--s-2); }
 .stat-table caption span { font-weight: 400; color: var(--muted); margin-left: var(--s-2); }

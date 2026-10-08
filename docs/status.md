@@ -22,6 +22,14 @@
   ([ADR-0006](adr/0006-evidence-standard.md)). The forward test has
   predeclared criteria ([forward test](forward-test.md)). None of this is
   deployed yet.
+- **The record carries a physics-informed assessment.** BTC/EUR 4h returns
+  show no persistence that DFA can detect beyond chance (Hurst exponent inside
+  its shuffle range in every period); a random market with the window's mean
+  drift and volatility clustering matches H1's held-out return in
+  33 % of trials; the forward protocol's false-GO rate is 1.8 % to 4.8 %
+  without drift, but F3 stops 95 % to 98 % of no-drift paths and 87 % of
+  drifted paths before the 30th trade ([ADR-0008](adr/0008-physics-informed-nulls.md),
+  [physics](physics.md)). Whether F3 should be revised is an open decision.
 - **What GO allows.** Forward paper trading and the €10 execution pilot,
   nothing more.
 - **What is built.** VPS operations, live-pilot tooling and the Jev shadow mode
@@ -36,12 +44,25 @@
 | Runtime | Freqtrade 2026.8, pinned by image digest in `compose.yaml`; config in layers (base → VPS → live → secrets) |
 | Strategies | `H1ChannelBreakout` (tracked, dry-run, frozen); `H1JevShadow` (modes off, shadow and filter) |
 | Research | One pipeline (`make research ARGS=…`): Binance proxy data validated against Kraken, data manifest, bias checks, fixed-stake backtests, marked-to-market metrics with provenance, [H1 record](../research/experiments/H1/record.md); a statistical assessment of the record (`statistics.json`, rebuilt by `make stats`, no Docker) |
+| Physics | `make physics` (no Docker, about 8 minutes): stylized facts, surrogate and fitted-model nulls, forward-protocol calibration, first-passage check, growth/Kelly, trials ledger (`research/ledger.json`); `physics.json` drift-tested by prefix hashes; a pure H1 replay verified against all 41 recorded trades (`tests/test_breakout.py`) |
 | Hypotheses | H1 (GO marginal, frozen); [H2](../research/hypotheses/H2.md) (predeclared 2026-10-08, not run) |
 | Operations | Health ping to a dead-man's switch; backup of every trade database and the Jev records (plaintext secret staging is removed even when restic fails); restore of a named database that leaves the bot stopped; image pruning; hardened systemd units, including a daily forward report timer (04:15 UTC, after the backup); [Debian 13 runbook](../ops/README.md); soak checklist |
 | Live tooling | Read-only public preflight plus an account-required live-pilot target; bounded account-wide reconciliation that fails on incomplete history; a read-only forward report (`sq.live.forward`, `make forward-report`) that checks the [forward test](forward-test.md) criteria; credential-free `config/live.json`; secrets validation for deployable overlays |
 | Jev | Candidate recording, credential-free worker with a bounded main-loop deadline and null provider, fail-closed filter, leakage-safe evaluation harness; no real provider ([Jev](jev.md)) |
 | Checks | `make ci`: unit tests (`make test`, no Docker), lint, format, shellcheck, Compose variants and three config validations; the same in GitHub Actions |
 | Demo | [GitHub Pages](https://sebastianspicker.github.io/schrodingers-quant/), built from `pages/` and the recorded H1 equity curves (`make research ARGS=equity-curves`, which refuses to write if a curve disagrees with the record) |
+
+## Physics-informed assessment (2026-10-08)
+
+[ADR-0008](adr/0008-physics-informed-nulls.md) adds a tracked copy of the
+proxy candles, a verified pure replay of H1, the predeclared null set, the
+forward-protocol calibration, growth and Kelly figures, the research-trials
+ledger and the demo section "Market structure and null models". The desk
+reads its growth block from `physics.json` and stays standard-library only.
+Verified locally: `uv run --locked pytest` (all tests, including the breakout
+reproduction and the physics drift test), ruff, shellcheck, `sh pages/build.sh`,
+and the page's pure renderer under node against the real `physics.json`. Not
+verified: the page in a browser; nothing was deployed.
 
 ## Workbench revision (2026-10-08)
 

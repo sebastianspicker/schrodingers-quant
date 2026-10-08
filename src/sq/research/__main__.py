@@ -27,6 +27,9 @@ Subcommands:
   stats                           Statistical assessment of the recorded equity curves
                                    (bootstrap intervals, random-timing benchmark, ...);
                                    runs without the image: make stats
+  physics                         Physics-informed assessment of the record (stylized facts,
+                                   surrogate and model nulls, forward-protocol calibration,
+                                   growth, trials ledger); no image: make physics
   jev-evaluate                    Offline baseline-vs-filter comparison of Jev's
                                    recorded assessments
 """
@@ -100,6 +103,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--out", type=Path, help="Output path (default: <experiment>/statistics.json)"
     )
 
+    physics_parser = subparsers.add_parser(
+        "physics", help="Physics-informed assessment of the recorded experiment (no image needed)"
+    )
+    physics_parser.add_argument("--experiment", type=Path, default=default_experiment_dir())
+    physics_parser.add_argument("--out", type=Path, help="Output path (default: physics.json)")
+    physics_parser.add_argument("--null-trials", type=int, default=None)
+    physics_parser.add_argument("--calibration-trials", type=int, default=None)
+    physics_parser.add_argument("--first-passage-trials", type=int, default=None)
+
     jev_parser = subparsers.add_parser(
         "jev-evaluate", help="Offline baseline-vs-filter comparison of Jev's recorded assessments"
     )
@@ -129,6 +141,20 @@ def main(argv: list[str] | None = None) -> int:
         from sq.research import statistics
 
         statistics.write_statistics(args.experiment, args.out)
+        return 0
+    if args.subcommand == "physics":
+        from sq.research import physics
+
+        overrides = {
+            key: value
+            for key, value in (
+                ("null_trials", args.null_trials),
+                ("calibration_trials", args.calibration_trials),
+                ("first_passage_trials", args.first_passage_trials),
+            )
+            if value is not None
+        }
+        physics.write_physics(args.experiment, args.out, **overrides)
         return 0
 
     from sq.research import jev_evaluation, pipeline

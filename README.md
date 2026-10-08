@@ -131,6 +131,16 @@ The page also works on a phone and follows your system's dark mode.
   random-timing benchmark, a constant-exposure benchmark and a power analysis,
   rebuilt by `make stats` from the recorded curves and shown on the demo page
   ([ADR-0006](docs/adr/0006-evidence-standard.md)).
+- **Physics-informed nulls and a calibrated test.** The market's stylized
+  facts (tail index, Hurst exponent, permutation entropy, multifractal
+  intermittency), H1 replayed on surrogate and simulated markets that keep
+  those facts but have no edge, the forward protocol's own false-GO rate under
+  such markets, the stop as a first-passage problem, time-average growth and
+  Kelly sizing, and a ledger of every evaluation of a rule on recorded data with
+  the deflated Sharpe ratio. Rebuilt by `make physics` without Docker and shown on the demo
+  page ([ADR-0008](docs/adr/0008-physics-informed-nulls.md),
+  [physics](docs/physics.md)). None of it is evidence of an edge; it sharpens
+  the test.
 - **A forward test with rules fixed in advance.** `make forward-report` reads
   the dry-run trade database and public candles, read-only, and checks the
   predeclared criteria F1 to F4 ([forward test](docs/forward-test.md)).
@@ -200,6 +210,7 @@ pairs. Other exchanges need changes there and a fresh preflight run.
 | `user_data/strategies/` | `H1ChannelBreakout` (frozen), `H1JevShadow` (optional model filter) |
 | `src/sq/` | Project package: config validation, read-only live tools (including the forward report), Jev worker, research pipeline, analysis and statistics |
 | `tests/` | Unit tests of the research, live-tooling and ops logic; no Docker needed (`make test`) |
+| `research/data/`, `research/ledger.json` | Tracked proxy candles (with their own manifest) for workstation research, and the research-trials ledger (ADR-0008) |
 | `research/` | Hypotheses (H1, and the predeclared successor H2), research configs, experiment records, research-only strategies |
 | `ops/` | Host side: health ping, backup and restore, retention, systemd units, runbooks |
 | `pages/` | The GitHub Pages demo and its screenshots |

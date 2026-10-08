@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-08",
+  "entries": [
+    {
+      "exchange": "binance",
+      "file": "binance-BTC_EUR-4h.csv.gz",
+      "path": "research/data/binance-BTC_EUR-4h.csv.gz",
+      "pair": "BTC/EUR",
+      "timeframe": "4h",
+      "first_candle": "2020-01-03T08:00:00+00:00",
+      "last_candle": "2026-09-24T08:00:00+00:00",
+      "row_count": 14736,
+      "sha256": "edf4e803ccc71bb26f4ab2db7f08e5ff0a4f47f024a240f4bddc311d8e37aa7f",
+      "source": "Binance public REST /api/v3/klines (BTCEUR, 4h), downloaded 2026-10-08 on the workstation",
+      "matches": "research/data-manifest.json entry BTC_EUR-4h.feather (row count, first and last candle); that file is the record's pinned provenance and is left untouched",
+      "note": "Tracked copy of the proxy history for workstation research without Docker (ADR-0008). Same rows as BTC_EUR-4h.feather: one Binance maintenance gap at 2020-02-19T16:00Z. The last decimals of a few candles differ from the feather; tests/test_breakout.py bounds the effect."
+    }
+  ]
+}

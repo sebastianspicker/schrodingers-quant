@@ -166,9 +166,56 @@ def test_cli_writes_reviewable_reports_and_csv(tmp_path, capsys):
     r = payload["runs"]["test-base"]
     assert r["recorded_strategy_drawdown_pct_4h"] == 30
     assert r["strategy"]["max_drawdown_pct_daily"] == 25
+    assert r["growth"] is None  # no physics.json in the synthetic experiment
+    assert payload["physics_sha256"] is None
     assert "No edge or capital approval" in capsys.readouterr().out
     assert "Retrospective constant fixed-stake" in (out / "report.md").read_text()
+    assert "### Growth and sizing" in (out / "report.md").read_text()
+    assert "physics.json is missing" in (out / "report.md").read_text()
     assert "strategy_pct,buy_hold_pct,excess_pp" in (out / "monthly-returns.csv").read_text()
+
+
+def test_stale_physics_is_refused(tmp_path):
+    source = experiment(tmp_path)
+    (source / "physics.json").write_text(
+        json.dumps({"equity_curves_sha256": "not-the-curves", "growth": {}})
+    )
+    with pytest.raises(ValueError, match="rebuild physics"):
+        desk.build_report(source)
+
+
+def test_growth_is_read_from_physics(tmp_path):
+    source = experiment(tmp_path)
+    curves_hash = hashlib.sha256((source / "equity-curves.json").read_bytes()).hexdigest()
+    growth = {
+        "trade_level": {
+            "mean_pct": 1.0,
+            "time_average_growth_pct": 0.9,
+            "volatility_drag_pct": 0.1,
+            "kelly": {
+                "kelly_fraction": 0.5,
+                "kelly_fraction_unconstrained": 0.5,
+                "kelly_ci95": [0.0, 1.0],
+                "share_resamples_zero": 0.1,
+            },
+        },
+        "daily_level": {},
+        "frontier": [
+            {
+                "fraction": 1.0,
+                "annualised_growth_pct": 1.0,
+                "max_drawdown_pct": 2.0,
+                "terminal_multiple": 1.0,
+            }
+        ],
+        "qualification": "descriptive",
+    }
+    (source / "physics.json").write_text(
+        json.dumps({"equity_curves_sha256": curves_hash, "growth": {"test-base": growth}})
+    )
+    report = desk.build_report(source)
+    assert report["runs"]["test-base"]["growth"] == growth
+    assert "Kelly fraction 0.50" in desk.markdown(report)
 
 
 def test_refuse_stale_statistics_without_outputs(tmp_path):
@@ -198,3 +245,12 @@ def test_archived_h1_remains_authoritative():
     assert r["evidence"]["mean_trade_ci_includes_zero"]
     assert "evaluated twice" in report["contamination"]
     assert len(r["monthly"]) == 27
+    g = r["growth"]
+    assert set(g) == {"trade_level", "daily_level", "frontier", "qualification"}
+    assert set(g["trade_level"]["kelly"]) >= {
+        "kelly_fraction",
+        "kelly_ci95",
+        "share_resamples_zero",
+    }
+    assert [p["fraction"] for p in g["frontier"]] == [0.25, 0.5, 0.75, 1.0]
+    assert g == desk.build_report(h1)["runs"]["heldout-base"]["growth"]

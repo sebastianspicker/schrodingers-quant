@@ -233,6 +233,39 @@ held-out strategy evaluation.
   same file, image and manifest hashes in its JSON output under
   `research/experiments/H1/*.json`; this record summarizes them.
 
+## Physics-informed assessment (added 2026-10-08)
+
+Added after the statistical assessment, without changing any figure above;
+decided in [ADR-0008](../../../docs/adr/0008-physics-informed-nulls.md),
+explained in [docs/physics.md](../../../docs/physics.md), full output in
+[physics.json](physics.json) (`make physics`, no Docker). H1's rules are
+replayed by `sq.research.breakout`, which reproduces every trade in this record
+on the tracked proxy candles (`research/data/`). The null set was fixed before
+the shares were computed.
+
+Held-out period, base costs, 1,000 paths per null:
+
+| Null market | Return ≥ H1's | Drawdown ≤ H1's | Both |
+| --- | --- | --- | --- |
+| Block shuffle of the real candles (5-day blocks) | 9.5 % | 24 % | 7.2 % |
+| IAAFT surrogate (same returns, same spectrum) | 16 % | 35 % | 12 % |
+| Geometric Brownian motion, zero drift | 16 % | 23 % | 12 % |
+| GARCH(1,1)-t, zero drift | 26 % | 11 % | 8.9 % |
+| GARCH(1,1)-t, with the window's mean drift | 33 % | 14 % | 11 % |
+| Multifractal random walk, zero drift | 19 % | 22 % | 13 % |
+
+The Hurst exponent of the held-out returns is 0.531, inside the range that
+random shuffles of the same returns produce (0.447 to 0.554), as in every other
+period: DFA detects no persistence for a breakout to earn from beyond chance
+(permutation entropy shows slight short-range ordinal structure on the train
+period and the full history). The forward protocol's false-GO rate under the
+no-drift nulls is 1.8 % to 4.8 %, but F3 stops 95 % to 98 % of
+those paths before the 30th trade, which takes 4 to 6 years, and 87 % of
+paths with the historical mean drift. The deflated Sharpe probability for
+seven counted trials is 0.74. None of this changes the verdict; the held-out
+window was inspected before these diagnostics existed, so on it they are
+descriptive.
+
 ## Glossary
 
 | Term | Meaning here |

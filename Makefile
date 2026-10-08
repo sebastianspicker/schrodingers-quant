@@ -1,4 +1,4 @@
-.PHONY: help check test stats desk format validate validate-local validate-live validate-vps validate-report ci research \
+.PHONY: help check test stats physics desk format validate validate-local validate-live validate-vps validate-report ci research \
 	preflight preflight-live reconcile forward-report \
 	backup retention \
 	pull up down logs status
@@ -8,6 +8,7 @@ help:
 	  'check          Ruff lint/format, shellcheck, Compose syntax incl. overlay examples, unit tests' \
 	  'test           Unit tests of the research, live-tooling and ops logic (no Docker needed)' \
 	  'stats          Rebuild research/experiments/H1/statistics.json from the recorded curves (no Docker)' \
+	  'physics        Rebuild research/experiments/H1/physics.json: stylized facts, null models, forward calibration (no Docker, minutes; ARGS=...)' \
 	  'desk           Offline trader report: cash sleeves, monthly returns, risk and VPS economics (ARGS=...)' \
 	  'format         Format Python sources' \
 	  'validate       Load tracked base config and strategy using pinned Freqtrade (Docker required)' \
@@ -42,6 +43,9 @@ test:
 
 stats:
 	PYTHONPATH=src uv run --locked python -m sq.research stats
+
+physics:
+	PYTHONPATH=src uv run --locked python -m sq.research physics $(ARGS)
 
 desk:
 	PYTHONPATH=src uv run --locked python -m sq.research.desk $(ARGS)

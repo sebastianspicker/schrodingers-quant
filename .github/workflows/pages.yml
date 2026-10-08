@@ -9,6 +9,7 @@ on:
       - "src/sq/research/desk.py"
       - "research/experiments/H1/equity-curves.json"
       - "research/experiments/H1/statistics.json"
+      - "research/experiments/H1/physics.json"
   workflow_dispatch:
 
 permissions:
