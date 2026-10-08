@@ -100,11 +100,17 @@ deliberately not used.
    growth block. `research/ledger.json` lists every evaluation of a rule on
    recorded data and is appended, never edited, when a new one happens.
 6. **Reproducibility and drift.** Fixed seed, legacy `RandomState` streams,
-   one stream per model. Each Monte Carlo section records a SHA-256 of its
-   first 25 per-trial outcomes; a unit test rebuilds the cheap sections
-   exactly and the 25-trial prefixes of every null run and of the calibration,
-   and fails if any of them drifts. The aggregate shares beyond the prefix are
-   not re-derived by the test; `make physics` reproduces them.
+   one stream per model. Each Monte Carlo section records its first 25
+   per-trial outcomes and their SHA-256. Tests verify those hashes and rebuild
+   the cheap sections exactly. Prefix comparisons allow at most 0.001 percentage
+   points of return/drawdown difference across platforms (EUR 0.01 on EUR 1000),
+   while trade/lock counts, protocol flags and candle-grid completion times
+   must match exactly. Fitted parameters allow relative error of 1e-4, with
+   a tighter 1e-6 for the likelihood. These accommodate optimizer/libm rounding;
+   a fixed random stream does not guarantee bitwise-identical fitted arithmetic.
+   Same-runtime prefix hashes remain independent of the total trial count.
+   The aggregate shares beyond the prefix are not re-derived by the test;
+   `make physics` rebuilds them and can differ slightly across platforms.
 7. **What the nulls may not be used for.** They do not change H1's rules or
    its verdict. A physics-derived entry filter or regime switch on existing
    data is a new hypothesis for forward data only (ADR-0004 spends the
