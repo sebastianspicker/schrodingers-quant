@@ -29,9 +29,9 @@ ADR-0008 predeclares the set of null models so that none is chosen after
 seeing which one H1 beats.
 
 Reproducibility: fixed seed, legacy `RandomState` streams, one stream per
-model; each Monte Carlo section records the SHA-256 of its first
-`PREFIX_TRIALS` per-trial outcomes so a test can rebuild that prefix cheaply
-and detect drift without rerunning everything.
+model; each Monte Carlo section records its first `PREFIX_TRIALS` per-trial
+outcomes and their SHA-256. Tests rebuild that prefix cheaply, allowing small
+cross-platform numerical differences while requiring exact discrete outcomes.
 """
 
 import hashlib

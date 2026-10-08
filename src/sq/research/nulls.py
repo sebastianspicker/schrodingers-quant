@@ -61,10 +61,10 @@ covariance lambda^2 ln(L / (|tau| + 1)) is not guaranteed positive definite
 once truncated), they are clipped to zero, which raises the field's variance.
 The volatility normalization uses the resulting diagonal covariance.
 
-Randomness uses the legacy `numpy.random.RandomState`, whose stream is stable
-across numpy versions, so results are reproducible exactly from the seed. Each
-model draws from its own generator (seed plus a hash of its key), so adding a
-model does not change the others.
+Randomness uses the legacy `numpy.random.RandomState`. Each model draws from
+its own generator (seed plus a hash of its key), so adding a model does not
+change the others. Floating-point fits and simulated outcomes can still differ
+slightly across platforms; recorded trial outcomes permit numerical comparison.
 """
 
 import hashlib
@@ -476,14 +476,18 @@ def _fit_summary(params: dict) -> dict:
     return {k: float(f"{v:.6g}") for k, v in params.items()}
 
 
+def _prefix_outcomes(outcomes: list) -> list:
+    """Readable per-trial outcomes at the fingerprint's precision."""
+    return [[None if v is None else round(float(v), 6) for v in row] for row in outcomes]
+
+
 def _prefix_hash(outcomes: list) -> str:
     """SHA-256 of the JSON of per-trial outcome lists, floats rounded to 6 decimals.
 
     Every model draws from its own generator and each trial only draws what it
     needs, so the first k trials are the same whatever the total trial count.
     """
-    rounded = [[None if v is None else round(float(v), 6) for v in row] for row in outcomes]
-    return hashlib.sha256(json.dumps(rounded).encode()).hexdigest()
+    return hashlib.sha256(json.dumps(_prefix_outcomes(outcomes)).encode()).hexdigest()
 
 
 def _percentiles(values) -> dict:
@@ -510,9 +514,9 @@ def null_comparison(
 ) -> dict:
     """H1 on the real window against surrogate and fitted-model paths.
 
-    With `prefix` > 0 every null also reports `prefix_sha256`, a fingerprint of
-    its first `prefix` trial outcomes (see `_prefix_hash`); it does not depend
-    on `trials`.
+    With `prefix` > 0 every null also reports readable `prefix_outcomes` and
+    their `prefix_sha256` fingerprint (see `_prefix_hash`); they do not depend
+    on `trials`. Rows contain return %, drawdown %, trade count and lock count.
 
     Surrogates (block shuffle, IAAFT) resample the window's own candles
     together with the 121 candles before it (the warm-up), so the first signal
@@ -590,7 +594,7 @@ def null_comparison(
             "fit": _fit_summary(params) if params is not None else None,
         }
         if prefix > 0:
-            results[key]["prefix_sha256"] = _prefix_hash(
+            results[key]["prefix_outcomes"] = _prefix_outcomes(
                 [
                     [
                         row["net_return_pct"],
@@ -601,6 +605,7 @@ def null_comparison(
                     for row in rows[:prefix]
                 ]
             )
+            results[key]["prefix_sha256"] = _prefix_hash(results[key]["prefix_outcomes"])
     return _round(
         {"observed": observed, "trials": trials, "block_candles": block, "models": results}
     )
@@ -654,8 +659,8 @@ def forward_calibration(
 ) -> dict:
     """The forward-test protocol (F3, F4, P1, P2) on simulated futures.
 
-    With `prefix` > 0 every model also reports `prefix_sha256` of its first
-    `prefix` trials' [eligible completion, counterfactual years or null,
+    With `prefix` > 0 every model also reports `prefix_outcomes` and their
+    `prefix_sha256`: the first `prefix` trials' [eligible completion, counterfactual years or null,
     f3, raw p1, raw p2, full-horizon MaxDrawdown lock count]; independent of
     `trials`. Public P1/P2 shares additionally require eligible completion.
 
@@ -745,6 +750,7 @@ def forward_calibration(
             "fit": _fit_summary(params),
         }
         if prefix > 0:
+            results[key]["prefix_outcomes"] = _prefix_outcomes(outcomes[:prefix])
             results[key]["prefix_sha256"] = _prefix_hash(outcomes[:prefix])
     return _round(
         {
