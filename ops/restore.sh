@@ -3,8 +3,8 @@
 # leaving the bot stopped so an operator must explicitly resume trading.
 #
 # Usage:
-#   ops/restore.sh --local <backup-dir-or-sqlite-file> [--db <name>]
-#   ops/restore.sh --restic <snapshot-id> [--db <name>]
+#   ops/restore.sh --local <backup-dir-or-sqlite-file> [--db <name>] [--with-evidence]
+#   ops/restore.sh --restic <snapshot-id> [--db <name>] [--with-evidence]
 #
 # backup.sh snapshots every user_data/runtime/*.sqlite file that exists (e.g.
 # dry-run.sqlite, live.sqlite), so a backup directory or restic snapshot may
@@ -24,6 +24,15 @@
 # twice: once in staging before it touches the live path, and once more after
 # it replaces the live database.
 #
+# --with-evidence also restores the forward-test evidence from the same backup:
+# reports/*.json (window manifest, STOP latch, latest report) and
+# market-data.sqlite, taken from the directory holding the chosen database. Each
+# file it replaces is first renamed aside to <name>.pre-restore.<timestamp>;
+# nothing is deleted, and files that exist only on the host are left alone.
+#
+# If the integrity check of the restored database fails, the container is left
+# stopped and the error names the .pre-restore.<timestamp> file to move back.
+#
 # The container is stopped for the swap and started again at the end with
 # `docker compose up -d`. Because config/base.json sets initial_state=stopped,
 # Freqtrade reads its bot state from configuration at startup rather than
@@ -38,7 +47,20 @@ repo_root=${SQ_HOME:-$(CDPATH='' cd -- "$script_dir/.." && pwd)}
 
 runtime_dir="$repo_root/user_data/runtime"
 staging_dir="$runtime_dir/.restore-staging"
-container_staging_dir="/freqtrade/user_data/runtime/.restore-staging"
+container_runtime_dir="/freqtrade/user_data/runtime"
+container_staging_dir="$container_runtime_dir/.restore-staging"
+restic_target="$runtime_dir/.restore-staging-restic"
+
+cleanup_staging() {
+    # Both staging dirs can hold plaintext config/secrets from a restic
+    # restore; remove them on every exit path, signals included (dash does not
+    # run an EXIT trap when a signal kills the script).
+    rm -rf "${staging_dir:?}" "${restic_target:?}"
+}
+trap cleanup_staging 0
+trap 'cleanup_staging; exit 130' INT
+trap 'cleanup_staging; exit 143' TERM
+trap 'cleanup_staging; exit 129' HUP
 
 dc() {
     # cd, not --project-directory: Compose resolves compose.yaml, .env and
@@ -57,15 +79,52 @@ fail() {
 }
 
 usage() {
-    printf 'Usage: %s --local <backup-dir-or-sqlite-file> [--db <name>] | --restic <snapshot-id> [--db <name>]\n' "$0" >&2
+    printf 'Usage: %s --local <backup-dir-or-sqlite-file> [--db <name>] [--with-evidence] | --restic <snapshot-id> [--db <name>] [--with-evidence]\n' "$0" >&2
 }
+
+# Recovery pointer appended to integrity failures once the live files have been
+# replaced; empty before that.
+integrity_hint=""
 
 check_integrity() {
     # $1: container-visible path to the sqlite file to check.
     result=$(dc run --rm --no-deps --entrypoint sqlite3 freqtrade "$1" "PRAGMA integrity_check;") \
-        || fail "integrity_check failed to run against $1"
+        || fail "integrity_check failed to run against $1${integrity_hint:+; $integrity_hint}"
     result=$(printf '%s' "$result" | tr -d '\r\n ')
-    [ "$result" = "ok" ] || fail "PRAGMA integrity_check on $1 reported: $result"
+    [ "$result" = "ok" ] || fail "PRAGMA integrity_check on $1 reported: $result${integrity_hint:+; $integrity_hint}"
+}
+
+# move_aside $1: rename an existing file to <file>.pre-restore.$ts (never delete).
+move_aside() {
+    if [ -f "$1" ]; then
+        mv "$1" "$1.pre-restore.$ts"
+        log "moved $1 aside to $1.pre-restore.$ts"
+    fi
+}
+
+# stage_evidence: copy reports/*.json and market-data.sqlite from the directory
+# holding the chosen database into $staging_dir/evidence. Sets have_market_data
+# and have_reports.
+stage_evidence() {
+    src=$(dirname "$resolved_path")
+    mkdir -p "$staging_dir/evidence"
+    have_market_data=false
+    have_reports=false
+    if [ "$target_name" != market-data.sqlite ] && [ -f "$src/market-data.sqlite" ]; then
+        cp "$src/market-data.sqlite" "$staging_dir/evidence/market-data.sqlite"
+        have_market_data=true
+    fi
+    if [ -d "$src/reports" ]; then
+        mkdir -p "$staging_dir/evidence/reports"
+        for report in "$src"/reports/*.json; do
+            [ -f "$report" ] || continue
+            cp "$report" "$staging_dir/evidence/reports/"
+            have_reports=true
+        done
+    fi
+    if [ "$have_market_data" = false ] && [ "$have_reports" = false ]; then
+        fail "--with-evidence: no reports/*.json or market-data.sqlite next to $resolved_path"
+    fi
 }
 
 # resolve_from_dir $1: pick which *.sqlite under directory $1 to restore,
@@ -97,6 +156,7 @@ resolve_from_dir() {
 mode=""
 source_arg=""
 db_name=""
+with_evidence=false
 while [ $# -gt 0 ]; do
     case "$1" in
         --local | --restic)
@@ -111,6 +171,10 @@ while [ $# -gt 0 ]; do
             mode="$1"
             source_arg="$2"
             shift 2
+            ;;
+        --with-evidence)
+            with_evidence=true
+            shift
             ;;
         --db)
             [ $# -ge 2 ] || {
@@ -151,17 +215,18 @@ case "$mode" in
             fail "$source_arg is neither a backup directory nor a file"
         fi
         cp "$resolved_path" "$staging_dir/$target_name"
+        [ "$with_evidence" = false ] || stage_evidence
         ;;
     --restic)
         command -v restic >/dev/null 2>&1 || fail "restic is not installed on this host"
         [ -n "${RESTIC_REPOSITORY:-}" ] || fail "RESTIC_REPOSITORY is not set"
-        restic_target="$repo_root/user_data/runtime/.restore-staging-restic"
         rm -rf "$restic_target"
         mkdir -p "$restic_target"
         restic restore "$source_arg" --target "$restic_target" \
             || fail "restic restore of snapshot $source_arg failed"
         resolve_from_dir "$restic_target"
         cp "$resolved_path" "$staging_dir/$target_name"
+        [ "$with_evidence" = false ] || stage_evidence
         rm -rf "$restic_target"
         ;;
     *)
@@ -179,11 +244,16 @@ log "restoring $target_name"
 log "checking integrity of the staged snapshot before touching the live database"
 check_integrity "$container_staging_db"
 log "staged snapshot integrity_check ok"
+if [ "$with_evidence" = true ] && [ "$have_market_data" = true ]; then
+    check_integrity "$container_staging_dir/evidence/market-data.sqlite"
+    log "staged market-data.sqlite integrity_check ok"
+fi
 
 log "stopping the freqtrade service"
 dc stop freqtrade
 
 ts=$(date -u +%Y%m%dT%H%M%SZ)
+aside=""
 if [ -f "$host_db" ]; then
     aside="$host_db.pre-restore.$ts"
     mv "$host_db" "$aside"
@@ -203,11 +273,38 @@ for suffix in -wal -shm; do
 done
 
 cp "$staging_db" "$host_db"
-rm -rf "$staging_dir"
 log "restored snapshot copied to $host_db"
 
+if [ "$with_evidence" = true ]; then
+    if [ "$have_market_data" = true ]; then
+        move_aside "$runtime_dir/market-data.sqlite"
+        move_aside "$runtime_dir/market-data.sqlite-wal"
+        move_aside "$runtime_dir/market-data.sqlite-shm"
+        cp "$staging_dir/evidence/market-data.sqlite" "$runtime_dir/market-data.sqlite"
+        log "restored market-data.sqlite"
+    fi
+    if [ "$have_reports" = true ]; then
+        mkdir -p "$runtime_dir/reports"
+        for report in "$staging_dir"/evidence/reports/*.json; do
+            dest="$runtime_dir/reports/$(basename "$report")"
+            move_aside "$dest"
+            cp "$report" "$dest"
+        done
+        log "restored reports/*.json (reports only on this host were left in place)"
+    fi
+fi
+
+if [ -n "$aside" ]; then
+    integrity_hint="the freqtrade service is left stopped; the previous database is at $aside (move it back to $host_db to undo); other replaced files were kept as <name>.pre-restore.$ts"
+else
+    integrity_hint="the freqtrade service is left stopped; no previous database existed at $host_db; other replaced files were kept as <name>.pre-restore.$ts"
+fi
 log "checking integrity of the restored live database"
 check_integrity "$container_db"
+if [ "$with_evidence" = true ] && [ "$have_market_data" = true ]; then
+    check_integrity "$container_runtime_dir/market-data.sqlite"
+fi
+integrity_hint=""
 log "restored database integrity_check ok"
 
 log "starting the freqtrade service (bot state will be 'stopped' per initial_state)"

@@ -8,7 +8,7 @@ fee tier (`fetch_trading_fee`) and EUR balance (`fetch_balance`); both are
 read-only calls. This module never references any order-mutating ccxt method
 (create/cancel/edit order).
 
-Exit code: 0 feasible, 2 infeasible, 1 on error.
+Exit code: 0 feasible, 2 infeasible, 1 on error (including invalid arguments).
 """
 
 import argparse
@@ -18,7 +18,8 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from typing import Any
 
-from sq.config import TRACKED_BASE_CONFIG, load_config
+from sq.config import TRACKED_BASE_CONFIG, load_config, load_strategy
+from sq.live import CliArgumentParser, SafeMessageError, cli_error
 
 # ccxt and Freqtrade are imported inside the I/O functions, so the pure
 # feasibility computation is importable and unit-testable without the image.
@@ -82,6 +83,20 @@ class FeasibilityReport:
 AmountRounder = Callable[[float, float | None, int], float]
 
 
+def validate_stoploss(stoploss: float) -> float:
+    """A stoploss is a loss fraction strictly between -1 and 0 (e.g. -0.20).
+
+    +0.2 or -1.5 would otherwise yield a "feasible" report with a stop price
+    above the entry or at/below zero.
+    """
+    stoploss = float(stoploss)
+    if not (-1 < stoploss < 0):
+        raise SafeMessageError(
+            f"stoploss must be a negative fraction greater than -1 (e.g. -0.20), got {stoploss}"
+        )
+    return stoploss
+
+
 def freqtrade_amount_rounder() -> AmountRounder:
     """Freqtrade's `amount_to_precision` (ccxt TRUNCATE semantics), imported lazily."""
     from freqtrade.exchange.exchange_utils import amount_to_precision
@@ -105,6 +120,7 @@ def assess_feasibility(
     request or a wallet can actually hold and later sell. `round_amount`
     defaults to Freqtrade's `amount_to_precision`; tests inject their own.
     """
+    stoploss = validate_stoploss(stoploss)
     amount_to_precision = round_amount or freqtrade_amount_rounder()
     reasons: list[str] = []
 
@@ -200,12 +216,12 @@ def fetch_market_profile(pair: str, config: dict) -> MarketProfile:
 
     markets = client.load_markets()
     if pair not in markets:
-        raise ValueError(f"{pair} is not a Kraken market")
+        raise SafeMessageError(f"{pair} is not a Kraken market")
     market = markets[pair]
 
     order_book = client.fetch_order_book(pair, limit=5)
     if not order_book["bids"] or not order_book["asks"]:
-        raise ValueError(f"{pair} order book is empty")
+        raise SafeMessageError(f"{pair} order book is empty")
     bid = order_book["bids"][0][0]
     ask = order_book["asks"][0][0]
 
@@ -213,10 +229,20 @@ def fetch_market_profile(pair: str, config: dict) -> MarketProfile:
     # fee; without an account fee tier, assume the higher, conservative value.
     market_taker_fee = market.get("taker") or 0.0
     taker_fee = max(market_taker_fee, CONSERVATIVE_TAKER_FEE)
-    fee_source = (
-        f"conservative base-tier assumption {CONSERVATIVE_TAKER_FEE} (no credentials; "
-        f"ccxt market default {market_taker_fee})"
-    )
+
+    def fallback_fee_source(why: str) -> str:
+        # Name whichever side of max(market default, conservative) is in use.
+        if market_taker_fee > CONSERVATIVE_TAKER_FEE:
+            return (
+                f"ccxt market default taker fee {market_taker_fee} ({why}; above the "
+                f"conservative base-tier assumption {CONSERVATIVE_TAKER_FEE})"
+            )
+        return (
+            f"conservative base-tier assumption {CONSERVATIVE_TAKER_FEE} ({why}; "
+            f"ccxt market default {market_taker_fee})"
+        )
+
+    fee_source = fallback_fee_source("no credentials")
     account_fee_verified = False
 
     eur_balance: float | None = None
@@ -233,17 +259,22 @@ def fetch_market_profile(pair: str, config: dict) -> MarketProfile:
                 fee_source = "account fee tier (fetch_trading_fee)"
                 account_fee_verified = True
             else:
-                fee_source = "market default taker fee (fetch_trading_fee had no taker field)"
+                fee_source = fallback_fee_source("fetch_trading_fee had no taker field")
         except Exception as exc:
-            fee_source = (
-                f"market default taker fee (fetch_trading_fee failed: {exc.__class__.__name__})"
-            )
+            fee_source = fallback_fee_source(f"fetch_trading_fee failed: {exc.__class__.__name__}")
 
         try:
             balance = client.fetch_balance()
             quote = market["quote"]
-            eur_balance = balance.get(quote, {}).get("free")
-            eur_balance_source = "account balance (fetch_balance)"
+            entry = balance.get(quote)
+            if entry is None:
+                # ccxt commonly omits zero-balance currencies (as reconcile's
+                # fetch_base_balance handles too): an unfunded key reads as 0.0.
+                eur_balance = 0.0
+                eur_balance_source = f"account balance (fetch_balance; no {quote} entry, 0.0)"
+            else:
+                eur_balance = entry.get("free")
+                eur_balance_source = "account balance (fetch_balance)"
         except Exception as exc:
             eur_balance_source = f"not read (fetch_balance failed: {exc.__class__.__name__})"
 
@@ -267,7 +298,7 @@ def fetch_market_profile(pair: str, config: dict) -> MarketProfile:
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = CliArgumentParser(description=__doc__)
     parser.add_argument(
         "--config",
         action="append",
@@ -288,7 +319,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--stoploss",
         type=float,
-        help="Stoploss as a negative fraction, e.g. -0.20. Defaults to config['stoploss'] if set.",
+        help=(
+            "Stoploss as a negative fraction, e.g. -0.20. Defaults to the configured "
+            "strategy's stoploss."
+        ),
     )
     parser.add_argument(
         "--require-account-data",
@@ -308,17 +342,24 @@ def main() -> int:
     config_paths = args.configs or [TRACKED_BASE_CONFIG]
     config = load_config(config_paths, RunMode.UTIL_NO_EXCHANGE)
 
-    pair = args.pair or config.get("exchange", {}).get("pair_whitelist", [None])[0]
+    pair = args.pair or (config.get("exchange", {}).get("pair_whitelist") or [None])[0]
     if not pair:
-        raise ValueError("No --pair given and no pair_whitelist entry in the merged config")
+        raise SafeMessageError("No --pair given and no pair_whitelist entry in the merged config")
 
     stake_eur = args.stake if args.stake is not None else config.get("stake_amount")
     if stake_eur is None:
-        raise ValueError("No --stake given and no stake_amount in the merged config")
+        raise SafeMessageError("No --stake given and no stake_amount in the merged config")
 
-    stoploss = args.stoploss if args.stoploss is not None else config.get("stoploss")
-    if stoploss is None:
-        raise ValueError("No --stoploss given and no stoploss in the merged config")
+    if args.stoploss is not None:
+        stoploss = args.stoploss
+    else:
+        # The stoploss lives in the strategy class, not in any config layer.
+        # Load it the way the bot does (Freqtrade's resolver, which also applies
+        # a config override if one exists), so preflight cannot drift from it.
+        if not config.get("strategy"):
+            raise SafeMessageError("No --stoploss given and no strategy in the merged config")
+        stoploss = load_strategy(config).stoploss
+    stoploss = validate_stoploss(stoploss)
 
     market = fetch_market_profile(pair, config)
     feasibility = assess_feasibility(
@@ -357,8 +398,7 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except Exception as exc:  # noqa: BLE001 - top-level CLI error boundary
-        # Never print str(exc): it can echo config paths, pair/account details or,
-        # depending on the failure, credential-adjacent text from ccxt. Match the
-        # inner handlers above: name the exception class only.
-        print(json.dumps({"error": f"{exc.__class__.__name__}: preflight failed"}, indent=2))
+        # Deliberate SafeMessageErrors print their message; anything else only
+        # its class name (see sq.live.cli_error).
+        print(json.dumps({"error": cli_error(exc, "preflight")}, indent=2))
         sys.exit(1)

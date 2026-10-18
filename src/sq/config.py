@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import json
+import re
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -10,13 +13,172 @@ if TYPE_CHECKING:
     from freqtrade.enums import RunMode
 
 # Freqtrade is imported inside the functions that need it, so the pure checks
-# below (`check_tracked_invariants`, `check_merged_secrets`) are importable and
-# unit-testable on a development machine without the pinned image.
+# below (`check_tracked_invariants`, `check_merged_secrets`, the layer checks) are
+# importable and unit-testable on a development machine without the pinned image.
 
-TRACKED_BASE_CONFIG = Path(__file__).resolve().parents[2] / "config" / "base.json"
+TRACKED_CONFIG_DIR = Path(__file__).resolve().parents[2] / "config"
+TRACKED_BASE_CONFIG = TRACKED_CONFIG_DIR / "base.json"
+TRACKED_LIVE_CONFIG = TRACKED_CONFIG_DIR / "live.json"
+TRACKED_EXAMPLES_DIR = TRACKED_CONFIG_DIR / "examples"
 
 PLACEHOLDER_JWT_SECRET_KEY = "REPLACE_WITH_RANDOM_32_CHARS_KEY"
 MIN_JWT_SECRET_KEY_LENGTH = 32
+
+# Every field that holds a credential. `telegram.chat_id` is not secret on its
+# own, but it identifies the operator's chat and pairs with the bot token, so
+# tracked files must leave it empty too. `api_server.username` is not listed:
+# it is an account name, not a credential.
+CREDENTIAL_FIELDS = (
+    ("exchange", "key"),
+    ("exchange", "secret"),
+    ("exchange", "password"),
+    ("exchange", "uid"),
+    ("telegram", "token"),
+    ("telegram", "chat_id"),
+    ("api_server", "password"),
+    ("api_server", "jwt_secret_key"),
+    ("api_server", "ws_token"),
+)
+PLACEHOLDER_PREFIXES = ("REPLACE_", "REPLACE-", "CHANGE_ME", "CHANGE-ME", "CHANGEME")
+
+
+def is_placeholder(value: object) -> bool:
+    """True for example placeholders such as `REPLACE_WITH_...`, `CHANGE_ME` or `<token>`."""
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    return (
+        text == PLACEHOLDER_JWT_SECRET_KEY
+        or text.upper().startswith(PLACEHOLDER_PREFIXES)
+        or (len(text) > 1 and text.startswith("<") and text.endswith(">"))
+    )
+
+
+def is_blank(value: object) -> bool:
+    return value is None or (isinstance(value, str) and not value.strip())
+
+
+def read_config_file(path: Path | str) -> dict:
+    """Read one config layer as raw JSON, without Freqtrade's defaults or merging.
+
+    Raises ValueError naming the file and, for a syntax error, only the line and
+    column: the text around the error may be a credential, so it is never shown.
+    Every layer is read here before Freqtrade loads it, because Freqtrade's own
+    parse error quotes the surrounding config text.
+    """
+    try:
+        text = Path(path).read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        raise ValueError(f"{path}: not valid UTF-8 text.") from None
+    except OSError as exc:
+        raise ValueError(f"{path}: cannot read ({exc.strerror or type(exc).__name__}).") from None
+    try:
+        config = _parse_json(text)
+    except ValueError as exc:
+        position = _error_position(text, exc)
+        where = f" at line {position[0]}, column {position[1]}" if position else ""
+        raise ValueError(f"{path}: invalid JSON{where}.") from None
+    if not isinstance(config, dict):
+        raise ValueError(f"{path}: the top level must be a JSON object.")
+    return config
+
+
+def _parse_json(text: str) -> object:
+    # Parse as Freqtrade does (rapidjson with comments and trailing commas) when
+    # rapidjson is available, i.e. in the image; plain JSON elsewhere.
+    try:
+        import rapidjson
+    except ImportError:
+        return json.loads(text)
+    return rapidjson.loads(text, parse_mode=rapidjson.PM_COMMENTS | rapidjson.PM_TRAILING_COMMAS)
+
+
+def _error_position(text: str, exc: ValueError) -> tuple[int, int] | None:
+    if isinstance(exc, json.JSONDecodeError):
+        return exc.lineno, exc.colno
+    # rapidjson: "Parse error at offset N: ..." (offset into the UTF-8 encoding).
+    match = re.search(r"offset (\d+)", str(exc))
+    if not match:
+        return None
+    before = text.encode("utf-8")[: int(match.group(1))].decode("utf-8", errors="ignore")
+    return before.count("\n") + 1, len(before) - (before.rfind("\n") + 1) + 1
+
+
+def _section(config: dict, section: str, name: str = "", *, required: bool = False) -> dict:
+    """Return `config[section]`, raising ValueError if it is not a JSON object."""
+    prefix = f"{name}: " if name else ""
+    if section not in config or config[section] is None:
+        if required:
+            raise ValueError(f"{prefix}{section} section is missing.")
+        return {}
+    if not isinstance(config[section], dict):
+        raise ValueError(f"{prefix}{section} must be a JSON object.")
+    return config[section]
+
+
+def check_tracked_credentials(config: dict, name: str) -> None:
+    """Raise if a tracked config file sets any credential field (placeholders are allowed).
+
+    Names the file and field only; never prints the value.
+    """
+    for section, field in CREDENTIAL_FIELDS:
+        value = _section(config, section, name).get(field)
+        if not is_blank(value) and not is_placeholder(value):
+            raise ValueError(
+                f"{name}: tracked config must not contain credentials ({section}.{field} is set)."
+            )
+
+
+def check_layer_invariants(config: dict, name: str, *, live: bool) -> None:
+    """Raise if a config layer (or a merged config) weakens a dry-run safety default.
+
+    Only the tracked live overlay (`live=True`) may set `dry_run` to false; every
+    layer, the live overlay included, must keep `initial_state` stopped and forced
+    entries disabled.
+    """
+    if not live and "dry_run" in config and config["dry_run"] is not True:
+        raise ValueError(f"{name}: dry_run must stay true outside config/live.json.")
+    if "initial_state" in config and config["initial_state"] != "stopped":
+        raise ValueError(f'{name}: initial_state must stay "stopped".')
+    if "force_entry_enable" in config and config["force_entry_enable"] is not False:
+        raise ValueError(f"{name}: force_entry_enable must stay false.")
+
+
+def check_layer_placeholders(config: dict, name: str, *, allow: bool) -> None:
+    """Raise if a config layer still holds a placeholder credential, unless `allow`.
+
+    Names the file and field only; never prints the value.
+    """
+    if allow:
+        return
+    for section, field in CREDENTIAL_FIELDS:
+        if is_placeholder(_section(config, section, name).get(field)):
+            raise ValueError(f"{name}: {section}.{field} is still the example placeholder.")
+
+
+def check_allow_placeholders_scope(paths: list[Path | str]) -> None:
+    """Raise unless every layer is tracked: --allow-placeholders is for the examples only."""
+    for path in paths:
+        if layer_kind(path) == "local":
+            raise ValueError(
+                f"--allow-placeholders only applies to config/examples/*; {path} is not an example."
+            )
+
+
+def layer_kind(path: Path | str) -> str:
+    """Classify a --config path: "base", "live", "example" (all tracked) or "local".
+
+    Matched on the trailing path components, so the container paths
+    (/freqtrade/config/...) and repo-relative paths classify the same way.
+    """
+    parts = Path(path).parts
+    if parts[-2:] == ("config", "base.json"):
+        return "base"
+    if parts[-2:] == ("config", "live.json"):
+        return "live"
+    if len(parts) >= 3 and parts[-3:-1] == ("config", "examples"):
+        return "example"
+    return "local"
 
 
 def load_config(paths: list[Path | str], run_mode: RunMode | None = None) -> dict:
@@ -45,9 +207,15 @@ def check_tracked_invariants(config: dict) -> None:
         raise ValueError("The scaffold must use spot dry-run mode.")
     if config.get("initial_state") != "stopped":
         raise ValueError("The idle scaffold must start stopped.")
-    if config["exchange"].get("key") or config["exchange"].get("secret"):
-        raise ValueError("The tracked scaffold must not contain exchange credentials.")
-    if config["api_server"]["enabled"] or config["telegram"]["enabled"]:
+    for section, field in CREDENTIAL_FIELDS:
+        value = _section(config, section, required=True).get(field)
+        if not is_blank(value) and not is_placeholder(value):
+            raise ValueError(
+                f"The tracked scaffold must not contain credentials ({section}.{field} is set)."
+            )
+    if _section(config, "api_server", required=True).get("enabled") or _section(
+        config, "telegram", required=True
+    ).get("enabled"):
         raise ValueError("Control interfaces must remain disabled in the scaffold.")
     if config.get("force_entry_enable"):
         raise ValueError("Forced entries must remain disabled in the scaffold.")
@@ -60,31 +228,34 @@ def check_merged_secrets(config: dict, *, allow_placeholders: bool = False) -> N
     """
     if allow_placeholders:
         return
-    api_server = config.get("api_server", {})
+    api_server = _section(config, "api_server")
     if api_server.get("enabled"):
-        if not api_server.get("username"):
+        if is_blank(api_server.get("username")):
             raise ValueError("api_server.enabled is true but username is empty.")
-        if not api_server.get("password"):
-            raise ValueError("api_server.enabled is true but password is empty.")
+        _check_credential(api_server, "api_server", "password")
         jwt_secret_key = api_server.get("jwt_secret_key") or ""
-        if not jwt_secret_key:
+        if is_blank(jwt_secret_key):
             raise ValueError("api_server.enabled is true but jwt_secret_key is empty.")
         if len(jwt_secret_key) < MIN_JWT_SECRET_KEY_LENGTH:
             raise ValueError(
                 f"api_server.enabled is true but jwt_secret_key is shorter than "
                 f"{MIN_JWT_SECRET_KEY_LENGTH} characters."
             )
-        if jwt_secret_key == PLACEHOLDER_JWT_SECRET_KEY:
-            raise ValueError(
-                "api_server.enabled is true but jwt_secret_key is still the example placeholder."
-            )
+        _check_credential(api_server, "api_server", "jwt_secret_key")
+        _check_credential(api_server, "api_server", "ws_token")
 
-    telegram = config.get("telegram", {})
+    telegram = _section(config, "telegram")
     if telegram.get("enabled"):
-        if not telegram.get("token"):
-            raise ValueError("telegram.enabled is true but token is empty.")
-        if not telegram.get("chat_id"):
-            raise ValueError("telegram.enabled is true but chat_id is empty.")
+        _check_credential(telegram, "telegram", "token")
+        _check_credential(telegram, "telegram", "chat_id")
+
+
+def _check_credential(section_config: dict, section: str, field: str) -> None:
+    value = section_config.get(field)
+    if is_blank(value):
+        raise ValueError(f"{section}.enabled is true but {field} is empty.")
+    if is_placeholder(value):
+        raise ValueError(f"{section}.enabled is true but {field} is still the example placeholder.")
 
 
 def load_strategy(config: dict):
@@ -99,7 +270,7 @@ def load_strategy(config: dict):
     return strategy
 
 
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--config",
@@ -108,28 +279,100 @@ def main() -> None:
         metavar="PATH",
         help=(
             "Full layered config file list, later overrides earlier; may be repeated. "
-            "Validated in addition to the tracked base config, without its invariant checks."
+            "Validated in addition to the tracked base config: each file's safety checks, "
+            "then the merged result's."
         ),
     )
     parser.add_argument(
         "--allow-placeholders",
         action="store_true",
         help=(
-            "Skip the merged-config secrets check (empty/placeholder credentials). "
-            "Only for validating example configs (e.g. config/examples/secrets.example.json) "
-            "in CI, never for a real layered config."
+            "Skip the merged-config secrets check (empty/placeholder credentials) and allow "
+            "placeholders in config/examples/* layers. Refused if any other layer than the "
+            "tracked base, live and example configs is given."
         ),
     )
     args = parser.parse_args()
+    try:
+        validate(args.configs or [], allow_placeholders=args.allow_placeholders)
+    except (ValueError, OSError, *_freqtrade_errors()) as exc:
+        # One line, no traceback. Only the first line of the message: Freqtrade
+        # appends config excerpts on later lines.
+        message = str(exc).strip().splitlines()
+        if hasattr(exc, "validator") and hasattr(exc, "absolute_path"):
+            # A jsonschema error's message quotes the offending value, which can
+            # be a credential: name the field and the failed rule only.
+            field = ".".join(str(part) for part in exc.absolute_path) or "(top level)"
+            message = [f"config schema check failed at {field} ({exc.validator})"]
+        print(f"sq.config: {message[0] if message else type(exc).__name__}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _freqtrade_errors() -> tuple[type[BaseException], ...]:
+    errors: list[type[BaseException]] = []
+    try:
+        from freqtrade.exceptions import FreqtradeException
+
+        errors.append(FreqtradeException)
+    except ImportError:
+        pass
+    try:
+        from jsonschema import ValidationError
+
+        errors.append(ValidationError)
+    except ImportError:
+        pass
+    return tuple(errors)
+
+
+def _named(name: object, check, *args, **kwargs) -> None:
+    try:
+        check(*args, **kwargs)
+    except ValueError as exc:
+        raise ValueError(f"{name}: {exc}") from None
+
+
+def validate(configs: list[str], *, allow_placeholders: bool = False) -> None:
+    """Run every check; raise ValueError (or a Freqtrade error) on the first failure."""
+    # Raw per-file checks first, before Freqtrade merges the layers: a merged
+    # config can no longer tell which file set a value.
+    check_tracked_credentials(read_config_file(TRACKED_BASE_CONFIG), str(TRACKED_BASE_CONFIG))
+    live_overlay = read_config_file(TRACKED_LIVE_CONFIG)
+    check_tracked_credentials(live_overlay, str(TRACKED_LIVE_CONFIG))
+    check_layer_invariants(live_overlay, str(TRACKED_LIVE_CONFIG), live=True)
+    for example in sorted(TRACKED_EXAMPLES_DIR.glob("*.json")):
+        example_config = read_config_file(example)
+        check_tracked_credentials(example_config, str(example))
+        check_layer_invariants(example_config, str(example), live=False)
+    if allow_placeholders:
+        check_allow_placeholders_scope(configs)
+    for path in configs:
+        kind = layer_kind(path)
+        layer = read_config_file(path)
+        if kind != "local":
+            check_tracked_credentials(layer, str(path))
+        check_layer_invariants(layer, str(path), live=kind == "live")
+        check_layer_placeholders(layer, str(path), allow=allow_placeholders and kind == "example")
 
     base_config = load_config([TRACKED_BASE_CONFIG])
-    check_tracked_invariants(base_config)
+    _named(TRACKED_BASE_CONFIG, check_tracked_invariants, base_config)
     strategy = load_strategy(base_config)
     print(f"Validated tracked spot dry-run configuration and {type(strategy).__name__}.")
 
-    if args.configs:
-        merged_config = load_config(args.configs)
-        check_merged_secrets(merged_config, allow_placeholders=args.allow_placeholders)
+    if configs:
+        merged_config = load_config(configs)
+        check_layer_invariants(
+            merged_config,
+            "merged config",
+            live=any(layer_kind(path) == "live" for path in configs),
+        )
+        _named(
+            "merged config",
+            check_merged_secrets,
+            merged_config,
+            allow_placeholders=allow_placeholders,
+        )
         merged_strategy = load_strategy(merged_config)
         print(f"Validated layered configuration and {type(merged_strategy).__name__}.")
 
@@ -137,4 +380,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

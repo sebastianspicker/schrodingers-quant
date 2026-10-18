@@ -22,8 +22,8 @@ This directory holds research records and inputs, no code. The code lives in
   `--strategy-path` and never used outside train/validation.
 - `experiments/<id>/`: tracked experiment records and summarized JSON results
   (`record.md`, `*.json`); raw Freqtrade export data stays in the ignored
-  `user_data/backtest_results/`. `experiments/H2/` will hold H2's records, and
-  does not exist yet.
+  `user_data/backtest_results/`. `experiments/H2/` holds H2's record, which
+  says it has not been run yet.
 - `data-manifest.json`: provenance of the proxy OHLCV data (ADR-0002), including
   the tracked copy below.
 - `data/`: `binance-BTC_EUR-4h.csv.gz`, the same Binance 4h history the research
@@ -54,6 +54,9 @@ unit test fails if the tracked file drifts from a fresh build
 stylized facts of the market, H1 replayed on surrogate and simulated markets
 with specified constraints, the forward protocol's model-conditioned GO rates, a
 first-passage check of the stop, growth and Kelly figures, and the trials
-ledger. `make physics` rebuilds it from `data/` and the recorded curves without
-Docker (a few minutes); a unit test rebuilds the cheap sections and a fixed
-prefix of every Monte Carlo section and fails if the tracked file drifts.
+ledger. `make physics` rebuilds it in place from `data/` and the recorded curves
+without Docker (about eight minutes); a unit test rebuilds the cheap sections and
+a fixed prefix of every Monte Carlo section and fails if the tracked file drifts.
+Another platform can change the last digits; see
+[rebuilding physics.json](../docs/physics.md#rebuilding-physicsjson) for a
+non-destructive `--out` run.

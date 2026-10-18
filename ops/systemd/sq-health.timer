@@ -3,6 +3,7 @@ Description=Run sq-health.service every 5 minutes
 
 [Timer]
 OnBootSec=5min
+OnActiveSec=1min
 OnUnitActiveSec=5min
 Persistent=true
 

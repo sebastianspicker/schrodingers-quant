@@ -10,6 +10,7 @@ stdlib-only, so the worker stays free of exchange code.
 
 import json
 import logging
+import os
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -52,13 +53,22 @@ def read_jsonl(path: Path, *, strict: bool = False) -> Iterator[dict]:
 
 
 def append_jsonl(path: Path, record: dict) -> None:
-    """Append one record as a JSON line.
+    """Append one record as a JSON line, durably.
 
-    A single write() call of one line is atomic against other appenders on
-    POSIX for the line lengths this module produces (well under PIPE_BUF).
+    The whole line goes out in one `os.write` on an `O_APPEND` descriptor and is
+    fsynced before returning. For a regular file that write is not interleaved
+    with other appenders and is not split by us; a short write (disk full, a
+    signal) can still leave a partial line, which readers skip as malformed.
     """
-    with open(path, "a", encoding="utf-8") as fh:
-        fh.write(json.dumps(record, sort_keys=True) + "\n")
+    data = (json.dumps(record, sort_keys=True) + "\n").encode("utf-8")
+    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o666)
+    try:
+        view = memoryview(data)
+        while view:
+            view = view[os.write(fd, view) :]
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 def parse_utc(value: str | None) -> datetime | None:

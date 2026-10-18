@@ -1,6 +1,6 @@
 {
  "source": "equity-curves.json",
- "source_sha256": "5206ed92601acfdf3d0a29271bafb45516adbd52878ef760c4c4987e54139290",
+ "source_sha256": "36ea6d11474af879c7b2665c3f1962396973700c24c8ae80cabff34849e23f7e",
  "pair": "BTC/EUR",
  "timeframe": "4h",
  "notional_eur": 1000,
@@ -221,7 +221,7 @@
     "max_drawdown_pct": 74.1619,
     "max_drawdown_pct_daily": 73.621,
     "longest_drawdown_days": 418,
-    "annualised_volatility_pct": 71.9939,
+    "annualised_volatility_pct": 71.994,
     "sharpe": 0.7674,
     "sortino": 1.0894,
     "return_over_max_drawdown": 1.787,
@@ -286,15 +286,15 @@
     "period_days": 1093,
     "net_return_pct": {
      "mean": 44.3444,
-     "p5": -75.4666,
-     "p50": 39.1416,
-     "p95": 180.1098
+     "p5": -75.4669,
+     "p50": 39.1417,
+     "p95": 180.1097
     },
     "max_drawdown_pct": {
      "mean": 48.156,
-     "p5": 20.3697,
+     "p5": 20.3699,
      "p50": 47.5138,
-     "p95": 84.4753
+     "p95": 84.4752
     },
     "actual_net_return_pct": 123.8448,
     "actual_max_drawdown_pct_daily": 28.4078,
@@ -304,7 +304,7 @@
    "constant_exposure": {
     "exposure_fraction": 0.4138,
     "fee_per_side": 0.01,
-    "net_return_pct": 71.9585,
+    "net_return_pct": 71.959,
     "max_drawdown_pct": 39.4213
    },
    "yearly": [
@@ -490,9 +490,9 @@
     "net_return_pct": 265.2324,
     "cagr_pct": 137.867,
     "max_drawdown_pct": 20.5232,
-    "max_drawdown_pct_daily": 18.3288,
+    "max_drawdown_pct_daily": 18.3289,
     "longest_drawdown_days": 111,
-    "annualised_volatility_pct": 46.1997,
+    "annualised_volatility_pct": 46.1998,
     "sharpe": 2.1539,
     "sortino": 3.6016,
     "return_over_max_drawdown": 12.9235,
@@ -557,25 +557,25 @@
     "period_days": 546,
     "net_return_pct": {
      "mean": 58.7852,
-     "p5": 6.8832,
-     "p50": 58.6431,
-     "p95": 111.6948
+     "p5": 6.8828,
+     "p50": 58.6439,
+     "p95": 111.6947
     },
     "max_drawdown_pct": {
-     "mean": 20.4189,
+     "mean": 20.419,
      "p5": 12.3397,
-     "p50": 18.8436,
-     "p95": 32.6969
+     "p50": 18.8444,
+     "p95": 32.6962
     },
     "actual_net_return_pct": 55.8113,
     "actual_max_drawdown_pct_daily": 23.3033,
     "p_return_ge_actual": 0.5354,
-    "p_drawdown_le_actual": 0.7484
+    "p_drawdown_le_actual": 0.7486
    },
    "constant_exposure": {
     "exposure_fraction": 0.5356,
     "fee_per_side": 0.01,
-    "net_return_pct": 109.7261,
+    "net_return_pct": 109.7256,
     "max_drawdown_pct": 10.1643
    },
    "yearly": [
@@ -762,11 +762,11 @@
     "net_return_pct": 17.5654,
     "cagr_pct": 7.5603,
     "max_drawdown_pct": 52.1825,
-    "max_drawdown_pct_daily": 51.7041,
+    "max_drawdown_pct_daily": 51.7039,
     "longest_drawdown_days": 348,
-    "annualised_volatility_pct": 44.9743,
+    "annualised_volatility_pct": 44.9744,
     "sharpe": 0.4112,
-    "sortino": 0.6096,
+    "sortino": 0.6097,
     "return_over_max_drawdown": 0.3366,
     "calmar": 0.1449
    },
@@ -829,16 +829,16 @@
     "exposure_days": 314,
     "period_days": 810,
     "net_return_pct": {
-     "mean": -11.5613,
-     "p5": -67.5539,
-     "p50": -12.2138,
-     "p95": 46.3416
+     "mean": -11.5614,
+     "p5": -67.5542,
+     "p50": -12.2129,
+     "p95": 46.339
     },
     "max_drawdown_pct": {
-     "mean": 44.7821,
-     "p5": 20.7856,
-     "p50": 41.8714,
-     "p95": 78.119
+     "mean": 44.782,
+     "p5": 20.7865,
+     "p50": 41.871,
+     "p95": 78.1203
     },
     "actual_net_return_pct": 25.5462,
     "actual_max_drawdown_pct_daily": 36.0342,
@@ -848,8 +848,8 @@
    "constant_exposure": {
     "exposure_fraction": 0.3845,
     "fee_per_side": 0.01,
-    "net_return_pct": 12.4134,
-    "max_drawdown_pct": 23.0251
+    "net_return_pct": 12.4135,
+    "max_drawdown_pct": 23.0249
    },
    "yearly": [
     {

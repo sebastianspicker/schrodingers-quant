@@ -38,7 +38,8 @@ It reports, per forward window:
    not exist yet.
 
 This module never references an order-mutating ccxt method and never writes
-to the trade database. Exit code: 0 CONTINUE, 4 STOP, 1 error.
+to the trade database. Exit code: 0 CONTINUE, 4 STOP, 1 error (including
+invalid arguments).
 """
 
 import argparse
@@ -59,6 +60,7 @@ from urllib.parse import quote
 import pandas as pd
 
 from sq.config import TRACKED_BASE_CONFIG, load_config
+from sq.live import CliArgumentParser, SafeMessageError, cli_error, trade_db_error
 from sq.live import candles as market_data
 from sq.research import h2, metrics
 from sq.research.statistics import Trade, bootstrap_trades, exposure_pct, trade_statistics
@@ -105,7 +107,7 @@ class PaperTrade:
     exit_submitted_date: pd.Timestamp | None = None
 
 
-class ReportInputError(ValueError):
+class ReportInputError(SafeMessageError):
     """A safe operator-facing contract error, without account data or secrets."""
 
 
@@ -116,7 +118,10 @@ def filled_snapshot(db_path: str, pairs: list[str]) -> tuple[list[PaperTrade], d
     partial exits and outstanding partial fills require a fill-ledger engine;
     this single-entry H1 reporter explicitly refuses those instead of guessing.
     """
-    connection = sqlite3.connect(read_only_uri(db_path), uri=True)
+    try:
+        connection = sqlite3.connect(read_only_uri(db_path), uri=True)
+    except sqlite3.Error as exc:
+        raise trade_db_error(exc, db_path) from exc
     connection.row_factory = sqlite3.Row
     try:
         connection.execute("BEGIN")
@@ -142,10 +147,8 @@ def filled_snapshot(db_path: str, pairs: list[str]) -> tuple[list[PaperTrade], d
                 pairs,
             ).fetchall()
         }
-    except sqlite3.OperationalError as exc:
-        raise ReportInputError(
-            "trade database missing or incompatible with the pinned schema"
-        ) from exc
+    except sqlite3.Error as exc:
+        raise trade_db_error(exc, db_path) from exc
     finally:
         connection.close()
     counts: dict[str, int] = {}
@@ -209,7 +212,8 @@ def filled_snapshot(db_path: str, pairs: list[str]) -> tuple[list[PaperTrade], d
 def db_path_from_url(db_url: str) -> str:
     prefix = "sqlite:///"
     if not db_url.startswith(prefix) or len(db_url) == len(prefix):
-        raise ValueError(f"Only sqlite db_url values are supported, got: {db_url}")
+        # Never echo the URL: a non-sqlite db_url can carry a password.
+        raise ReportInputError("Only sqlite db_url values are supported")
     return db_url[len(prefix) :]
 
 
@@ -315,7 +319,7 @@ def fetch_kraken_candles(pair: str, timeframe: str) -> pd.DataFrame:
     client = ccxt.kraken({"enableRateLimit": True, "timeout": 30000})
     rows = client.fetch_ohlcv(pair, timeframe, limit=KRAKEN_PUBLIC_CANDLE_LIMIT)
     if not rows:
-        raise ValueError(f"Kraken returned no {timeframe} candles for {pair}")
+        raise ReportInputError(f"Kraken returned no {timeframe} candles for {pair}")
     return candles_from_ohlcv(rows)
 
 
@@ -735,10 +739,10 @@ def performance_report(
 ) -> dict:
     """Marked-to-market performance on the fixed notional over the candle window."""
     if candles.empty:
-        raise ValueError("no candles in the forward window")
+        raise ReportInputError("no candles in the forward window")
     first = trades[0].open_date if trades else None
     if first is not None and first < candles["date"].iloc[0]:
-        raise ValueError(
+        raise ReportInputError(
             "the candles start after the first trade; pass --candles with a longer history"
         )
     last_close_time = candles["date"].iloc[-1] + step
@@ -938,7 +942,7 @@ def build_report(
         else candles[candles["date"] >= window_since].reset_index(drop=True)
     )
     if window.empty:
-        raise ValueError("no candles at or after the window start")
+        raise ReportInputError("no candles at or after the window start")
     window_start = window["date"].iloc[0]
     window_end = window["date"].iloc[-1] + step
     straddling = [
@@ -947,7 +951,7 @@ def build_report(
         if t.open_date < window_start and (t.close_date is None or t.close_date > window_start)
     ]
     if straddling:
-        raise ValueError(
+        raise ReportInputError(
             "a position was open at the window start; pass --candles with a longer history "
             "or an earlier --since"
         )
@@ -959,7 +963,7 @@ def build_report(
         t for t in trades if t.open_date < window_start and (since is None or t.open_date >= since)
     ]
     if dropped_by_history:
-        raise ValueError(
+        raise ReportInputError(
             f"{len(dropped_by_history)} trade(s) predate the candle history; pass --candles "
             "with a longer history, or --since to start a new window deliberately"
         )
@@ -1054,7 +1058,9 @@ def validate_max_drawdown(value: float) -> float:
     """The F3 stop must be a percentage strictly inside (0, 100): 0 or a
     non-finite value would disable the stop silently."""
     if not (0 < value < 100):
-        raise ValueError("--max-drawdown-pct must be a percentage between 0 and 100 (exclusive)")
+        raise ReportInputError(
+            "--max-drawdown-pct must be a percentage between 0 and 100 (exclusive)"
+        )
     return float(value)
 
 
@@ -1064,7 +1070,7 @@ def validate_out_path(path: Path) -> Path:
     cannot overwrite a trade database or anything else."""
     resolved = path.resolve()
     if resolved.suffix != ".json" or resolved.parent.name != "reports":
-        raise ValueError("--out must be a .json file inside a 'reports' directory")
+        raise ReportInputError("--out must be a .json file inside a 'reports' directory")
     return resolved
 
 
@@ -1109,7 +1115,7 @@ def record_trades_per_year(repo_root: Path) -> float | None:
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = CliArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument(
@@ -1136,7 +1142,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--initial-capital",
         type=float,
-        help="Account capital at window start; required for live account returns",
+        help="Account capital at window start; required with --since and for a live database",
     )
     parser.add_argument(
         "--max-drawdown-pct",
@@ -1172,6 +1178,13 @@ def main(argv: list[str] | None = None) -> int:
         or config["strategy"] not in ("H1ChannelBreakout", "H1JevShadow")
     ):
         raise ReportInputError("forward protocol supports one Kraken 4h H1 pair per database")
+    # docs/forward-test.md: only the default first-trade dry-run window may
+    # infer account capital from dry_run_wallet.
+    if args.initial_capital is None and (args.since or not config.get("dry_run", True)):
+        raise ReportInputError(
+            "--initial-capital (account capital at the window start) is required with "
+            "--since and for a live trade database"
+        )
     pair = pairs[0]
     timeframe = config["timeframe"]
     notional = float(config["stake_amount"])
@@ -1191,7 +1204,7 @@ def main(argv: list[str] | None = None) -> int:
     if archive.resolve() == Path(db_path).resolve():
         raise ReportInputError("candle archive must be separate from the trade database")
     if args.candles is None or args.archive is not None:
-        candles = market_data.archive_update(archive, candles, pair, timeframe, step)
+        candles = market_data.archive_update(archive, candles, pair, timeframe, step, now=now)
 
     strategy = load_strategy(config)
     # Freqtrade's resolver does not retain the dynamic module in sys.modules,
@@ -1289,11 +1302,11 @@ def main(argv: list[str] | None = None) -> int:
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except (ReportInputError, market_data.CandleError) as exc:
+    except SafeMessageError as exc:
         print(
             json.dumps(
                 {
-                    "error": str(exc),
+                    "error": cli_error(exc, "forward report"),
                     "action": "repair inputs and rerun; do not reset the window to hide failures",
                 }
             )
@@ -1302,5 +1315,5 @@ if __name__ == "__main__":
     except Exception as exc:  # noqa: BLE001 - top-level CLI error boundary
         # Match preflight/reconcile: never print str(exc) (it may echo config
         # paths or credential-adjacent text); name the exception class only.
-        print(json.dumps({"error": f"{exc.__class__.__name__}: forward report failed"}, indent=2))
+        print(json.dumps({"error": cli_error(exc, "forward report")}, indent=2))
         sys.exit(EXIT_ERROR)

@@ -58,16 +58,18 @@ time and capital; they do not establish an edge. See the
 Forward protocol v2 now uses an incremental SQLite candle archive, actual
 filled-order timestamps, separate fixed-stake/account returns, full-history H2
 sizing and implemented P1/P2 gates. Daily reports preserve STOP incidents and
-reject changed window contracts. Tools are bounded to one CPU and 512 MiB;
-research stays on the workstation. [ADR-0007](docs/adr/0007-trader-workbench.md)
+reject changed window contracts. The Compose `tools` service is bounded to one
+CPU and 512 MiB; local `make` targets such as `make physics` (peak about 0.5 GB
+RAM) and `make desk` run unbounded on the host. Research stays on the
+workstation. [ADR-0007](docs/adr/0007-trader-workbench.md)
 records the corrected contracts and limits.
 
 ## Screenshot tour
 
 The [interactive demo](https://sebastianspicker.github.io/schrodingers-quant/)
 is the backtest record of H1 as one page: specification, summary, results by
-period, protocol, limitations and system. It runs in your browser from a static
-JSON file; there is no bot or exchange behind it.
+period, protocol, limitations and system. It runs in your browser from three static
+JSON files; there is no bot or exchange behind it.
 
 ### 1. Results against buy-and-hold
 
@@ -165,15 +167,17 @@ The page also works on a phone and follows your system's dark mode.
 
 ## Quick start
 
-You need Docker with Compose and [uv](https://docs.astral.sh/uv/).
+You need Docker with Compose, [uv](https://docs.astral.sh/uv/) and
+[shellcheck](https://www.shellcheck.net/) (`brew install shellcheck` or
+`apt install shellcheck`).
 
 ```sh
 git clone https://github.com/sebastianspicker/schrodingers-quant.git
 cd schrodingers-quant
 uv sync --locked --group dev
 make ci        # unit tests, lint, Compose checks, and base/live/VPS config validation
-make up        # dry-run bot; stays "stopped" until started via API or Telegram
-make logs
+make up        # dry-run bot; starts in state "stopped" and opens no trades (no API or Telegram is enabled)
+make logs      # expect a log line naming the state STOPPED
 make down
 ```
 
@@ -190,7 +194,8 @@ the drills and stop conditions that must come first.
 
 The strategy and exchange are configuration, not architecture:
 
-- Pairs, stake, exchange and protections live in `config/base.json`. Local and
+- Pairs, stake and exchange live in `config/base.json`; the protections live in
+  the strategy class (`user_data/strategies/H1ChannelBreakout.py`). Local and
   secret overlays go in the git-ignored `config/local/`.
 - Strategies are plain Freqtrade files in `user_data/strategies/`. They don't
   import project code, so any Freqtrade install can load them.

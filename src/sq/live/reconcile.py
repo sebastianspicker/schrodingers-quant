@@ -3,7 +3,9 @@
 Compares, for the bot's whitelisted pair(s):
   - every exchange-closed order maps to a DB order by exchange order id;
   - filled amount and (where the fee currency is the base asset) fee match
-    within a precision tolerance;
+    within a tolerance relative to the order size, plus a tiny absolute floor;
+  - every filled, closed DB order dated inside the window appears in the
+    exchange history (no dry-run or phantom fills);
   - no DB order marked open that the exchange reports closed or canceled;
   - base-asset balance vs. the sum of open-trade amounts (dust).
 
@@ -11,7 +13,7 @@ Opens the SQLite DB read-only (`file:...?mode=ro`). Credentials are read only
 from the layered config and are never printed or logged. This module never
 references any order-mutating ccxt method (create/cancel/edit order).
 
-Exit code: 0 match, 3 mismatch, 1 error.
+Exit code: 0 match, 3 mismatch, 1 error (including invalid arguments).
 """
 
 import argparse
@@ -24,20 +26,30 @@ from typing import Any
 from urllib.parse import quote
 
 from sq.config import TRACKED_BASE_CONFIG, load_config
+from sq.live import CliArgumentParser, SafeMessageError, cli_error, trade_db_error
 
 # ccxt and Freqtrade are imported inside the I/O functions, so the pure
 # comparison (`reconcile`, the cursor helpers) is unit-testable without the image.
 
-DEFAULT_AMOUNT_TOLERANCE = 1e-6
-DEFAULT_FEE_TOLERANCE = 1e-6
-DEFAULT_DUST_TOLERANCE = 1e-6
+# Tolerances are an absolute floor plus a fraction of the larger compared value.
+# At the pilot's EUR 8 stake an entry fills ~0.000108 BTC (docs/live-pilot.md
+# section 7), so a fixed 1e-6 BTC would hide a ~0.9 % fill difference. 0.1 %
+# relative is ~10 of Kraken's 1e-8 BTC amount-precision ticks at that size:
+# far above float/rounding noise, far below a real fill or fee-rate error.
+# The amount and fee floor is one precision tick. The dust floor is ten ticks,
+# for the sub-tick remainders that fee deduction and truncation leave behind
+# after each round trip (preflight's `dust_base`).
+DEFAULT_RELATIVE_TOLERANCE = 1e-3
+DEFAULT_AMOUNT_TOLERANCE = 1e-8
+DEFAULT_FEE_TOLERANCE = 1e-8
+DEFAULT_DUST_TOLERANCE = 1e-7
 DEFAULT_MAX_PAGES = 20
 
 
 # --- Pure computation -------------------------------------------------------
 
 
-class IncompleteExchangeHistoryError(RuntimeError):
+class IncompleteExchangeHistoryError(SafeMessageError, RuntimeError):
     """The bounded exchange-history query may have omitted orders."""
 
 
@@ -78,6 +90,11 @@ class Mismatch:
     detail: str
 
 
+def differs(a: float, b: float, absolute: float, relative: float) -> bool:
+    """Whether `a` and `b` differ by more than `absolute + relative * max(|a|, |b|)`."""
+    return abs(a - b) > absolute + relative * max(abs(a), abs(b))
+
+
 def reconcile(
     db_orders: list[DbOrder],
     exchange_orders: list[ExchangeOrder],
@@ -88,8 +105,15 @@ def reconcile(
     amount_tolerance: float = DEFAULT_AMOUNT_TOLERANCE,
     fee_tolerance: float = DEFAULT_FEE_TOLERANCE,
     dust_tolerance: float = DEFAULT_DUST_TOLERANCE,
+    relative_tolerance: float = DEFAULT_RELATIVE_TOLERANCE,
+    since: datetime | None = None,
 ) -> list[Mismatch]:
-    """Pure comparison of DB state against exchange-reported state."""
+    """Pure comparison of DB state against exchange-reported state.
+
+    With `since` (the start of the fetched exchange window), also checks the
+    other direction: a closed DB order with a fill, dated inside the window,
+    must appear in the exchange history (a dry-run or phantom fill would not).
+    """
     mismatches: list[Mismatch] = []
     db_by_id = {order.order_id: order for order in db_orders}
 
@@ -106,7 +130,7 @@ def reconcile(
                 )
             )
             continue
-        if abs(db_order.filled - exchange_order.filled) > amount_tolerance:
+        if differs(db_order.filled, exchange_order.filled, amount_tolerance, relative_tolerance):
             mismatches.append(
                 Mismatch(
                     "amount_mismatch",
@@ -115,7 +139,9 @@ def reconcile(
                 )
             )
         if exchange_order.fee_currency == base_currency and exchange_order.fee_cost is not None:
-            if abs(db_order.fee_base - exchange_order.fee_cost) > fee_tolerance:
+            if differs(
+                db_order.fee_base, exchange_order.fee_cost, fee_tolerance, relative_tolerance
+            ):
                 mismatches.append(
                     Mismatch(
                         "fee_mismatch",
@@ -138,9 +164,28 @@ def reconcile(
                 )
             )
 
+    if since is not None:
+        for db_order in db_orders:
+            if (
+                db_order.is_open
+                or db_order.filled <= 0
+                or db_order.order_date is None
+                or db_order.order_date < since
+                or db_order.order_id in exchange_by_id
+            ):
+                continue
+            mismatches.append(
+                Mismatch(
+                    "missing_exchange_order",
+                    f"DB order {db_order.order_id} ({db_order.pair}) has a fill of "
+                    f"{db_order.filled} but is absent from the exchange history since "
+                    f"{since.isoformat()}",
+                )
+            )
+
     if base_balance is not None:
         dust = base_balance - open_trade_base_amount
-        if abs(dust) > dust_tolerance:
+        if differs(base_balance, open_trade_base_amount, dust_tolerance, relative_tolerance):
             mismatches.append(
                 Mismatch(
                     "dust",
@@ -177,12 +222,11 @@ def db_path_from_url(db_url: str) -> str:
     """Extract a filesystem path from a `sqlite:///...` db_url."""
     prefix = "sqlite:///"
     if not db_url.startswith(prefix):
-        raise ValueError(
-            f"Only sqlite db_url values are supported for reconciliation, got: {db_url}"
-        )
+        # Never echo the URL: a non-sqlite db_url can carry a password.
+        raise SafeMessageError("Only sqlite db_url values are supported for reconciliation")
     path = db_url[len(prefix) :]
     if not path:
-        raise ValueError(f"db_url has no path: {db_url}")
+        raise SafeMessageError("db_url has no path")
     return path
 
 
@@ -193,12 +237,30 @@ def parse_naive_utc(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value).replace(tzinfo=UTC)
 
 
+def parse_since(value: str) -> datetime:
+    """The `--since` cursor, parsed like the forward report's: naive values are UTC."""
+    import pandas as pd
+
+    from sq.live.forward import parse_utc_arg
+
+    try:
+        stamp = parse_utc_arg(value)
+    except (ValueError, TypeError) as exc:
+        raise SafeMessageError("--since must be an ISO 8601 timestamp") from exc
+    if pd.isna(stamp):
+        raise SafeMessageError("--since must be an ISO 8601 timestamp")
+    return stamp.to_pydatetime()
+
+
 def read_db_orders(db_url: str, pairs: list[str]) -> tuple[list[DbOrder], dict[str, float]]:
     """Read orders for the given pairs and the open-trade base amount, read-only."""
     path = db_path_from_url(db_url)
     # Percent-encode the path so `?`, `#` or `%` in a file name cannot swallow `mode=ro`.
     uri = f"file:{quote(path)}?mode=ro"
-    connection = sqlite3.connect(uri, uri=True)
+    try:
+        connection = sqlite3.connect(uri, uri=True)
+    except sqlite3.Error as exc:
+        raise trade_db_error(exc, path) from exc
     try:
         placeholders = ",".join("?" for _ in pairs)
         rows = connection.execute(
@@ -239,6 +301,8 @@ def read_db_orders(db_url: str, pairs: list[str]) -> tuple[list[DbOrder], dict[s
         # Per pair: base amounts of different assets must never be summed together.
         open_trade_base_amounts = {pair: 0.0 for pair in pairs}
         open_trade_base_amounts.update({row[0]: row[1] for row in open_amount_rows})
+    except sqlite3.Error as exc:
+        raise trade_db_error(exc, path) from exc
     finally:
         connection.close()
     return db_orders, open_trade_base_amounts
@@ -257,7 +321,7 @@ def fetch_exchange_orders(
     of returning a prefix that could be reported as a clean reconciliation.
     """
     if max_pages <= 0:
-        raise ValueError("max_pages must be positive")
+        raise SafeMessageError("max_pages must be positive")
 
     orders: list[dict[str, Any]] = []
     seen_account_order_ids: set[str] = set()
@@ -312,12 +376,12 @@ def fetch_base_balance(client: Any, base_currency: str) -> float:
         return 0.0
     total = entry.get("total") if isinstance(entry, dict) else None
     if total is None:
-        raise ValueError(f"Exchange balance for {base_currency} had no total")
+        raise SafeMessageError(f"Exchange balance for {base_currency} had no total")
     return float(total)
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = CliArgumentParser(description=__doc__)
     parser.add_argument(
         "--config",
         action="append",
@@ -330,12 +394,36 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--since",
-        help="ISO 8601 UTC cursor, e.g. 2026-09-23T00:00:00Z. Defaults to 24 hours ago.",
+        help=(
+            "ISO 8601 cursor, e.g. 2026-09-23T00:00:00Z; without a timezone it is UTC. "
+            "Defaults to 24 hours ago."
+        ),
     )
     parser.add_argument("--max-pages", type=int, default=DEFAULT_MAX_PAGES)
-    parser.add_argument("--amount-tolerance", type=float, default=DEFAULT_AMOUNT_TOLERANCE)
-    parser.add_argument("--fee-tolerance", type=float, default=DEFAULT_FEE_TOLERANCE)
-    parser.add_argument("--dust-tolerance", type=float, default=DEFAULT_DUST_TOLERANCE)
+    parser.add_argument(
+        "--amount-tolerance",
+        type=float,
+        default=DEFAULT_AMOUNT_TOLERANCE,
+        help="Absolute floor in base currency, added to the relative tolerance",
+    )
+    parser.add_argument(
+        "--fee-tolerance",
+        type=float,
+        default=DEFAULT_FEE_TOLERANCE,
+        help="Absolute floor in base currency, added to the relative tolerance",
+    )
+    parser.add_argument(
+        "--dust-tolerance",
+        type=float,
+        default=DEFAULT_DUST_TOLERANCE,
+        help="Absolute floor in base currency, added to the relative tolerance",
+    )
+    parser.add_argument(
+        "--relative-tolerance",
+        type=float,
+        default=DEFAULT_RELATIVE_TOLERANCE,
+        help="Fraction of the larger compared amount, fee or balance (default 0.1 %%)",
+    )
     return parser
 
 
@@ -351,20 +439,16 @@ def main() -> int:
     key = exchange_cfg.get("key") or ""
     secret = exchange_cfg.get("secret") or ""
     if not key or not secret:
-        raise ValueError(
+        raise SafeMessageError(
             "Reconciliation needs read-only exchange credentials from a layered config "
             "(e.g. config/local/secrets.json); none were found in the merged config."
         )
 
     pairs = exchange_cfg.get("pair_whitelist") or []
     if not pairs:
-        raise ValueError("No pairs in the merged config's exchange.pair_whitelist")
+        raise SafeMessageError("No pairs in the merged config's exchange.pair_whitelist")
 
-    base_since = (
-        datetime.fromisoformat(args.since.replace("Z", "+00:00"))
-        if args.since
-        else datetime.now(UTC) - timedelta(hours=24)
-    )
+    base_since = parse_since(args.since) if args.since else datetime.now(UTC) - timedelta(hours=24)
 
     db_orders, open_trade_base_amounts = read_db_orders(config["db_url"], pairs)
 
@@ -391,6 +475,8 @@ def main() -> int:
             amount_tolerance=args.amount_tolerance,
             fee_tolerance=args.fee_tolerance,
             dust_tolerance=args.dust_tolerance,
+            relative_tolerance=args.relative_tolerance,
+            since=since,
         )
         all_mismatches.extend(mismatches)
 
@@ -408,8 +494,7 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except Exception as exc:  # noqa: BLE001 - top-level CLI error boundary
-        # Never print str(exc): it can echo config paths, pair/account details or,
-        # depending on the failure, credential-adjacent text from ccxt. Match the
-        # inner handlers in preflight.py: name the exception class only.
-        print(json.dumps({"error": f"{exc.__class__.__name__}: reconciliation failed"}, indent=2))
+        # Deliberate SafeMessageErrors print their message; anything else only
+        # its class name (see sq.live.cli_error).
+        print(json.dumps({"error": cli_error(exc, "reconciliation")}, indent=2))
         sys.exit(1)

@@ -101,6 +101,26 @@ def check_max_drawdown_contract():
         PairLocks.use_db = True
 
 
+def check_jev_config_survives_schema(root: Path):
+    """The top-level "jev" key must pass Freqtrade's schema and reach H1JevShadow."""
+    overlay = root / "jev.json"
+    overlay.write_text(
+        json.dumps(
+            {
+                "strategy": "H1JevShadow",
+                "jev": {"mode": "filter", "assessment_ttl_minutes": 7, "dir": str(root / "jev")},
+            }
+        )
+    )
+    config = load_config([TRACKED_BASE_CONFIG, overlay], RunMode.UTIL_NO_EXCHANGE)
+    config.update(strategy_path="/freqtrade/strategies")
+    strategy = load_strategy(config)
+    assert type(strategy).__name__ == "H1JevShadow", type(strategy)
+    assert strategy.config["jev"]["mode"] == "filter", strategy.config.get("jev")
+    assert strategy._jev_mode() == "filter"
+    assert strategy._jev_ttl_minutes() == 7.0
+
+
 def check():
     check_pairlock_boundaries()
     check_max_drawdown_contract()
@@ -213,8 +233,9 @@ def check():
             "BTC/EUR", signal + step, 100.0, 1000.0, None, 1000.0, 1.0, None, "long"
         )
         assert stake == 500.0, stake
+        check_jev_config_survives_schema(root)
         engine.dispose()
-    print("Pinned Freqtrade locks, MaxDrawdown, ORM, forward CLI and H2 callback: PASS")
+    print("Pinned Freqtrade locks, MaxDrawdown, ORM, forward CLI, H2 callback and Jev config: PASS")
 
 
 if __name__ == "__main__":

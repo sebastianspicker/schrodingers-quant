@@ -56,6 +56,13 @@ automatically. A reboot after a kernel update is not automated by this
 runbook: check `/var/run/reboot-required` periodically. The soak checklist
 includes a reboot drill either way.
 
+A minimal image lacks tools that the checkout and the host scripts use. Install
+them now (`restic` is only needed for the optional offsite backup in §5):
+
+```sh
+sudo apt install -y git sqlite3 python3 openssl restic
+```
+
 ### 1.2 Time sync
 
 Debian 13 ships `systemd-timesyncd` enabled by default. Confirm it, and keep
@@ -151,9 +158,18 @@ sudo systemctl enable --now docker
 ### 1.6 Dedicated `sq` user
 
 ```sh
-sudo adduser --disabled-password --gecos "" sq
+getent passwd 1000 && echo "uid 1000 taken: use user: in compose.vps.yaml" || true
+sudo adduser --uid 1000 --disabled-password --gecos "" sq
 sudo usermod -aG docker sq
 ```
+
+`sq` gets uid 1000 on purpose: the container's `ftuser` is uid 1000, and both
+write to the bind-mounted `user_data/runtime` (the bot creates
+`dry-run.sqlite`, the host scripts write backups and reports). If `getent`
+prints a line, uid 1000 already belongs to another account (often the
+provider's default user). Create `sq` without `--uid`, check `id sq`, and set
+`user: "<uid>:<gid>"` for the `freqtrade` service in `compose.vps.yaml` so the
+container runs as `sq`.
 
 `sq` runs the systemd units in §4 and owns the checkout. It does not need
 sudo. Operators log in with their own account and use `sudo -iu sq`, or run
@@ -186,15 +202,19 @@ sudo -u sq chmod 600 /opt/schrodingers-quant/config/local/vps.json \
 ```
 
 Fill in `config/local/vps.json`'s `telegram.token` and `telegram.chat_id`, and
-`config/local/secrets.json`'s `api_server.username`, `password` and
-`jwt_secret_key` (32 or more random characters) plus `telegram.token` and
-`chat_id` (the same Telegram bot). Generate the API credentials and the JWT key
-with, for example:
+`config/local/secrets.json`'s `api_server.username`, `password`,
+`jwt_secret_key` (32 or more random characters) and `ws_token` plus
+`telegram.token` and `chat_id` (the same Telegram bot). Generate the API
+credentials and the JWT key with, for example:
 
 ```sh
 openssl rand -base64 32   # jwt_secret_key
 openssl rand -base64 18   # api_server password
+openssl rand -base64 24   # api_server ws_token
 ```
+
+`make validate-local` then checks base → `vps.json` → `secrets.json` and fails
+on any empty or placeholder credential.
 
 Create `/etc/schrodingers-quant/ops.env` (mode 600, owned by `sq`) for the
 host-side scripts in `ops/`. See §4 for how it is used; it holds
@@ -240,6 +260,14 @@ cd /opt/schrodingers-quant
 sudo -u sq docker compose config --quiet   # sanity check: merges base + vps
 ```
 
+Pull the images once before the first start. The systemd service gives
+`docker compose up -d` only 120 seconds (`TimeoutStartSec`), which a first
+image pull on a small VPS can exceed:
+
+```sh
+sudo -u sq docker compose pull
+```
+
 Then install and enable the systemd units (§4), which run
 `docker compose up -d` for you. To start manually first, for verification:
 
@@ -257,7 +285,9 @@ true after every container start or restart, including after a restore (see
 Daily forward reports now maintain `runtime/market-data.sqlite` without a
 research container. Backups snapshot it with the trade databases and copy
 reports, the pinned window manifest and the STOP latch. Restore matching
-evidence alongside a trade database; database restore alone is incomplete.
+evidence alongside a trade database with `ops/restore.sh ... --with-evidence`
+(replaced files are kept as `.pre-restore.<timestamp>`); database restore alone
+is incomplete.
 See [forward protocol v2](../docs/forward-test.md) for error recovery and
 explicit account capital. `make validate-report` exercises the real pinned
 Freqtrade database schema and H2 callback using temporary synthetic data.
@@ -274,9 +304,15 @@ port forward:
 ```sh
 ssh -L 8080:127.0.0.1:8080 sq@<vps-host>
 # then, from the operator machine:
-curl -s -u "$FREQTRADE_API_USERNAME:$FREQTRADE_API_PASSWORD" \
-  http://127.0.0.1:8080/api/v1/health
+curl -s -u "$API_USER:$API_PASS" http://127.0.0.1:8080/api/v1/health
 ```
+
+`API_USER` and `API_PASS` are placeholders for your shell on the operator
+machine, not variables that exist there. Their values are `api_server.username`
+and `api_server.password` in `config/local/secrets.json` on the VPS (the same
+values as `FREQTRADE_API_USERNAME` and `FREQTRADE_API_PASSWORD` in
+`/etc/schrodingers-quant/ops.env`). Export them in your own shell first, or
+type them in place of the variables.
 
 ### 3.2 Telegram
 
@@ -299,11 +335,19 @@ After verifying a restore or a restart, resume deliberately:
 # Telegram
 /start
 # or, over the SSH tunnel from §3.1
-curl -s -u "$FREQTRADE_API_USERNAME:$FREQTRADE_API_PASSWORD" \
+curl -s -u "$API_USER:$API_PASS" \
   -X POST http://127.0.0.1:8080/api/v1/start
 ```
 
 ## 4. Automation: systemd units
+
+If `RESTIC_REPOSITORY` is set in `ops.env`, initialize the repository once
+before enabling `sq-backup.timer`, with the same environment the backup uses;
+otherwise every offsite push fails. Skip this when backups stay local.
+
+```sh
+sudo -u sq sh -c 'set -a; . /etc/schrodingers-quant/ops.env; set +a; restic init'
+```
 
 Copy the unit files and enable them:
 
@@ -322,7 +366,7 @@ sudo systemctl enable --now sq-health.timer sq-backup.timer sq-retention.timer \
 | `schrodingers-quant.service` | `docker compose up -d` at boot; `systemctl start/stop/status` interface | boot, on demand |
 | `sq-health.timer` → `sq-health.service` | `ops/health_ping.py`: bot heartbeat and disk check, pings the dead-man's switch | every 5 minutes |
 | `sq-backup.timer` → `sq-backup.service` | `ops/backup.sh`: SQLite snapshot and config bundle, optional restic push | daily, 03:15 UTC |
-| `sq-retention.timer` → `sq-retention.service` | `ops/retention.sh --apply`: prune dangling Docker images | weekly |
+| `sq-retention.timer` → `sq-retention.service` | `ops/retention.sh --apply`: prune dangling Docker images and superseded `freqtradeorg/freqtrade` images (never the digest pinned in `compose.yaml`) | weekly |
 | `sq-forward-report.timer` → `sq-forward-report.service` | `ops/forward_report.sh`: forward paper-test report (`sq.live.forward`) | daily, 04:15 UTC |
 | `sq-alert@.service` | `health_ping.py --fail "<unit> failed"`, triggered by the above via `OnFailure=` | on failure of any of the above |
 
@@ -366,11 +410,13 @@ reads if present:
   a manual candle file is only needed for verified historical imports/repair.
   Without `--since`, the diagnostic window starts at the first order, so earlier
   missed entries cannot be tested. Use an explicit start for the soak.
-- The report is written by the image's user (`ftuser`, uid 1000), not by
-  `sq`. Create the directory once and give it to that uid:
-  `sudo -u sq mkdir -p user_data/runtime/reports && sudo chown 1000:1000 user_data/runtime/reports`.
+- The report is written by the container's user (`ftuser`, uid 1000), which is
+  also `sq` when §1.6 was followed, so `sq` already owns the directory. Create
+  it once before the first run:
+  `cd /opt/schrodingers-quant && sudo -u sq mkdir -p user_data/runtime/reports user_data/runtime/jev`.
   A `PermissionError` in the journal on the first run means this step was
-  skipped.
+  skipped, or `sq` is not uid 1000 and the container does not run as `sq`
+  (see §1.6).
 
 Each of the scheduled units sets `OnFailure=sq-alert@%n.service`, so a
 failure of the unit itself, not just an unhealthy bot, also reaches the same
@@ -406,13 +452,19 @@ header comment with usage and configuration. `ops/local-rehearsal.md` records a
 local Docker rehearsal of the full cycle.
 
 Restic is optional (`RESTIC_REPOSITORY` in `/etc/schrodingers-quant/ops.env`).
-Without it, backups stay local under `user_data/runtime/backups/`, and only the
-last 7 are kept by default.
+When set, each push is tagged `sq-backup` and the retention `restic forget`
+only ever considers snapshots with that tag, grouped by host and tags; older
+untagged snapshots already in the repository are kept and must be pruned by
+hand. Without restic, backups stay local under `user_data/runtime/backups/`,
+and only the last 7 are kept by default.
 
-Each backup holds every trade database in `user_data/runtime/`
-(`dry-run.sqlite`, and `live.sqlite` once the live overlay has run) plus the
-Jev JSONL records. When a backup holds more than one database, a restore needs
-its name: `ops/restore.sh --local <backup-dir> --db live.sqlite`.
+Each backup holds every `*.sqlite` in `user_data/runtime/` (`dry-run.sqlite`,
+`market-data.sqlite` once the forward report has run, and `live.sqlite` once
+the live overlay has run) plus the Jev JSONL records. A backup directory
+therefore usually holds more than one database, and a restore needs the trade
+database's name: `ops/restore.sh --local <backup-dir> --db dry-run.sqlite`
+(`--db live.sqlite` in live mode). Without `--db` the restore refuses and lists
+the databases it found.
 
 ## 6. Soak
 
@@ -420,8 +472,8 @@ See `ops/soak-checklist.md` for the 14-day soak procedure and its drills
 (container kill, reboot, network loss, restore from backup, disk-full
 simulation). During the soak, the daily forward report
 (`journalctl -u sq-forward-report.service --since -1d`) prints one summary
-line per day (window, trades, return, drawdown, F1 to F4, verdict) for the
-soak log. Its verdict must stay CONTINUE.
+line per day (window, closed trades, net return, drawdown, verdict, whether an
+incident is latched) for the soak log. Its verdict must stay CONTINUE.
 
 ## Glossary
 

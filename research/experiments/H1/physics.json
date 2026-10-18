@@ -5,7 +5,7 @@
  "notional_eur": 1000,
  "seed": 20260924,
  "candles_sha256": "edf4e803ccc71bb26f4ab2db7f08e5ff0a4f47f024a240f4bddc311d8e37aa7f",
- "equity_curves_sha256": "5206ed92601acfdf3d0a29271bafb45516adbd52878ef760c4c4987e54139290",
+ "equity_curves_sha256": "36ea6d11474af879c7b2665c3f1962396973700c24c8ae80cabff34849e23f7e",
  "prefix_trials": 25,
  "method": {
   "stylized_facts": "Log returns of 4h closes; Hill tails, DFA-1 and order-4 permutation entropy with shuffle ranges, log-absolute-return covariance. These diagnostics do not establish or exclude exploitable predictability.",

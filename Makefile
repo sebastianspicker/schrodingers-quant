@@ -12,13 +12,13 @@ help:
 	  'desk           Offline trader report: cash sleeves, monthly returns, risk and VPS economics (ARGS=...)' \
 	  'format         Format Python sources' \
 	  'validate       Load tracked base config and strategy using pinned Freqtrade (Docker required)' \
-	  'validate-local Also validate config/base.json layered with config/local/secrets.json' \
+	  'validate-local Also validate base + config/local/vps.json + config/local/secrets.json (each if present)' \
 	  'validate-live  Validate base + credential-free config/live.json overlay (no exchange contact)' \
 	  'validate-vps   Validate base + VPS overlay + example secrets (tracked files only)' \
-	  'validate-report Verify the forward CLI, actual ORM schema and H2 callback in the pinned image' \
+	  'validate-report Verify the forward CLI, actual ORM schema, H2 callback and Jev config key in the pinned image' \
 	  'ci             Run check, validate, validate-live, validate-vps, and validate-report' \
 	  'research       Research commands: make research ARGS="train" (see src/sq/research)' \
-	  'preflight      Read-only Kraken feasibility check: make preflight ARGS="--pair BTC/EUR --stake 8 --stoploss -0.20"' \
+	  'preflight      Read-only Kraken feasibility check: make preflight ARGS="--pair BTC/EUR --stake 8"' \
 	  'preflight-live Account-required check using base + live + local secrets (never places orders)' \
 	  'reconcile      Read-only DB vs Kraken reconciliation (needs config/local/secrets.json)' \
 	  'forward-report Forward paper-trading report from the dry-run DB and public Kraken candles' \
@@ -36,6 +36,7 @@ check: test
 	docker compose config --quiet
 	docker compose -f compose.yaml -f compose.vps.example.yaml config --quiet
 	docker compose -f compose.yaml -f compose.override.example.yaml config --quiet
+	@command -v shellcheck >/dev/null || { echo 'shellcheck not found: install it (brew install shellcheck, apt install shellcheck); see README Quick start' >&2; exit 1; }
 	shellcheck ops/*.sh pages/build.sh
 
 test:
@@ -59,7 +60,9 @@ validate:
 validate-local:
 	docker compose run --rm tools python -m sq.config \
 	  --config /freqtrade/config/base.json \
+	  $(if $(wildcard config/local/vps.json),--config /freqtrade/config/local/vps.json,) \
 	  $(if $(wildcard config/local/secrets.json),--config /freqtrade/config/local/secrets.json,)
+	$(if $(wildcard config/local/secrets.json),,@echo 'Notice: config/local/secrets.json not found; $(if $(wildcard config/local/vps.json),no local secrets were validated (base + config/local/vps.json only),no local layer was validated (tracked base config only)).' >&2)
 
 validate-live:
 	docker compose run --rm tools python -m sq.config \
@@ -109,10 +112,10 @@ up:
 	docker compose up -d
 
 down:
-	docker compose down
+	docker compose --profile jev --profile tools down
 
 logs:
-	docker compose logs --follow --tail 100
+	docker compose --profile jev logs --follow --tail 100
 
 status:
-	docker compose ps
+	docker compose --profile jev ps

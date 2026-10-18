@@ -20,6 +20,7 @@ def run() -> dict:
         "buy_hold": [800, 1000, 1100, 1200],
         "mtm_max_drawdown_pct": 30,
         "buy_hold_max_drawdown_pct": 22,
+        "buy_hold_net_return_pct": 18,
         "trades": [{"return_pct": r} for r in (50, 20, -30, -10)],
     }
 

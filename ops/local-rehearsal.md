@@ -81,6 +81,10 @@ delivery:
 | Unreachable API | `health_ping.py --base-url http://127.0.0.1:9 --timeout 2` | `2` (EXIT_UNREACHABLE) | `POST /ping/rehearsal/fail body=b'could not reach ...Connection refused' ... 200` |
 | Alert-relay mode | `health_ping.py --fail "sq-backup.service failed"` | `0` (EXIT_OK; the *notification* succeeded) | `POST /ping/rehearsal/fail body=b'sq-backup.service failed' ... 200` |
 
+A bot still in the `stopped` state reports `last_process_ts: null`, which
+`health_ping.py` treats as unhealthy: it pings `/fail` until the bot is
+`/start`ed, as in the "Healthy" row.
+
 An earlier pass used Python's plain `http.server` module, which only
 implements `GET`/`HEAD` and returned `501` for the `POST .../fail` calls,
 correctly producing exit `3` (EXIT_PING_FAILED: the local decision was made,

@@ -20,8 +20,12 @@ Freqtrade version starts rejecting it:
               "assessment_ttl_minutes": 60,
               "dir": "/freqtrade/user_data/runtime/jev"}}
 
-An unrecognized mode blocks new entries (fail closed); exits are unaffected.
-`mode` also falls back to `SQ_JEV_MODE`, `dir` to `SQ_JEV_DIR`, and
+A malformed `jev` section (not an object, no `mode`, or a `mode` that is not
+exactly "off", "shadow" or "filter") makes the strategy refuse to load, so the
+bot does not start: an operator who meant "filter" must never silently get
+"off". The effective mode is logged once at startup. If an unrecognized mode
+still reaches `confirm_trade_entry` it blocks new entries (fail closed); exits
+are unaffected. `mode` also falls back to `SQ_JEV_MODE`, `dir` to `SQ_JEV_DIR`, and
 `assessment_ttl_minutes` to `SQ_JEV_TTL_MINUTES` if the config key is absent.
 
 Modes:
@@ -51,7 +55,7 @@ already-recorded ids.
 
 Freqtrade wraps every strategy callback, including `confirm_trade_entry`, in
 `strategy_safe_wrapper(..., default_retval=True)`
-(`freqtrade/freqtradebot.py`, `execute_entry`, around the
+(`freqtrade/freqtradebot.py`, the entry-order routine, around the
 `strategy_safe_wrapper(self.strategy.confirm_trade_entry, default_retval=True)`
 call). That wrapper (`freqtrade/strategy/strategy_wrapper.py`) catches *any*
 exception raised by the callback and returns `default_retval` — here `True`,
@@ -80,7 +84,7 @@ Verified against the pinned image
     True`, that cached dataframe — and therefore the entry signal — only
     changes when a new candle closes; it does not change between iterations
     within the same still-open candle.
-  - If the signal is set, `execute_entry()` (line ~895) calls
+  - If the signal is set, the entry-order routine (line ~895) calls
     `confirm_trade_entry` (line ~945-958) through
     `strategy_safe_wrapper(..., default_retval=True)`. A `False` return only
     skips *this* call: `create_trade` returns `False` and `enter_positions`
@@ -99,11 +103,13 @@ Verified against the pinned image
   strategy does not re-signal on the same closed candle after it rolls over).
 """
 
+import ast
 import hashlib
 import inspect
 import json
 import logging
 import os
+import types
 from datetime import UTC, datetime, timedelta
 from functools import cache
 from pathlib import Path
@@ -113,11 +119,52 @@ from H1ChannelBreakout import H1ChannelBreakout
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODE = "off"
+MODES = ("off", "shadow", "filter")
 DEFAULT_DIR = "/freqtrade/user_data/runtime/jev"
 DEFAULT_TTL_MINUTES = 60.0
 
 CANDIDATES_FILENAME = "candidates.jsonl"
 ASSESSMENTS_FILENAME = "assessments.jsonl"
+
+
+def _class_source(cls: type) -> str | None:
+    """Source text of `cls`, or None if it cannot be found.
+
+    `inspect.getsource` needs the class's module in `sys.modules`; Freqtrade's
+    strategy resolver loads a strategy file without registering it there, so it
+    raises TypeError for the loaded strategy. Fall back to reading the file the
+    class's own methods were compiled from.
+    """
+    try:
+        return inspect.getsource(cls)
+    except (OSError, TypeError):
+        pass
+    filename = next(
+        (
+            member.__code__.co_filename
+            for member in vars(cls).values()
+            if isinstance(member, types.FunctionType)
+        ),
+        None,
+    )
+    if filename is None:
+        return None
+    try:
+        text = Path(filename).read_text(encoding="utf-8")
+        body = ast.parse(text).body
+    except (OSError, SyntaxError, ValueError):
+        return None
+    node = None
+    for name in cls.__qualname__.split("."):
+        node = next(
+            (n for n in body if isinstance(n, ast.ClassDef) and n.name == name),
+            None,
+        )
+        if node is None:
+            return None
+        body = node.body
+    first_line = min([node.lineno, *(d.lineno for d in node.decorator_list)])
+    return "".join(text.splitlines(keepends=True)[first_line - 1 : node.end_lineno])
 
 
 @cache
@@ -136,10 +183,13 @@ def _strategy_identity(strategy_cls: type) -> str:
         module = getattr(cls, "__module__", "") or ""
         if module.startswith("freqtrade."):
             continue
-        try:
-            sources.append(inspect.getsource(cls))
-        except (OSError, TypeError):
+        source = _class_source(cls)
+        if source is None:
+            # Never drop a class from the identity silently: the id would then
+            # stop reflecting that code.
+            logger.warning("Jev: no source found for %s; candidate ids will omit it", cls)
             continue
+        sources.append(source)
     return hashlib.sha256("\n".join(sources).encode("utf-8")).hexdigest()
 
 
@@ -219,6 +269,44 @@ class H1JevShadow(H1ChannelBreakout):
     `H1ChannelBreakout`.
     """
 
+    def __init__(self, config: dict) -> None:
+        super().__init__(config)
+        self._jev_validate_config()
+
+    def _jev_validate_config(self) -> None:
+        """Refuse to load on a malformed `jev` setting; log the effective mode.
+
+        A typo such as {"jev": "filter"} or {"jev": {"mod": "filter"}} would
+        otherwise resolve to the default "off" and silently disable a filter
+        the operator meant to run. Raising here stops the bot at startup,
+        before any order. (`confirm_trade_entry` itself cannot raise usefully,
+        see the module docstring.)
+        """
+        raw = self.config.get("jev")
+        if "jev" in self.config:
+            if not isinstance(raw, dict):
+                raise ValueError(f"Jev: the 'jev' config must be an object, got {raw!r}")
+            if "mode" not in raw and "SQ_JEV_MODE" not in os.environ:
+                raise ValueError(f"Jev: the 'jev' config has no 'mode' (one of {MODES})")
+        mode = self._jev_config().get("mode", os.environ.get("SQ_JEV_MODE", DEFAULT_MODE))
+        if mode not in MODES:
+            raise ValueError(f"Jev: unknown mode {mode!r}; expected one of {MODES}")
+        directory = self._jev_config().get("dir", os.environ.get("SQ_JEV_DIR", DEFAULT_DIR))
+        ttl = self._jev_config().get(
+            "assessment_ttl_minutes", os.environ.get("SQ_JEV_TTL_MINUTES", DEFAULT_TTL_MINUTES)
+        )
+        if not isinstance(directory, str) or not directory:
+            raise ValueError(f"Jev: 'dir' must be a non-empty string, got {directory!r}")
+        try:
+            ttl_minutes = float(ttl)
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"Jev: 'assessment_ttl_minutes' must be a number, got {ttl!r}"
+            ) from None
+        if not 0 < ttl_minutes < float("inf"):
+            raise ValueError(f"Jev: 'assessment_ttl_minutes' must be positive, got {ttl!r}")
+        logger.info("Jev: effective mode %r (dir=%s, ttl=%s min)", mode, directory, ttl_minutes)
+
     def _jev_config(self) -> dict:
         configured = self.config.get("jev")
         return configured if isinstance(configured, dict) else {}
@@ -285,11 +373,31 @@ class H1JevShadow(H1ChannelBreakout):
         _append_json_line(path, candidate)
         seen.add(candidate["candidate_id"])
 
+    def _jev_log_block(
+        self, level: int, candidate_id: str, reason: str, message: str, *args
+    ) -> None:
+        """Log a block once per (candidate, reason); repeats go to DEBUG.
+
+        A rejected entry is retried every few seconds for up to a candle, so the
+        same line would otherwise repeat thousands of times.
+        """
+        logged = getattr(self, "_jev_logged_blocks", None)
+        if logged is None:
+            logged = self._jev_logged_blocks = set()
+        key = (candidate_id, reason)
+        if key in logged:
+            level = logging.DEBUG
+        logged.add(key)
+        logger.log(level, message, *args)
+
     def _jev_filter_decision(self, candidate: dict) -> bool:
         path = self._jev_dir() / ASSESSMENTS_FILENAME
         assessment = _latest_assessment(path, candidate["candidate_id"])
         if assessment is None:
-            logger.info(
+            self._jev_log_block(
+                logging.INFO,
+                candidate["candidate_id"],
+                "no_assessment",
                 "Jev filter: no assessment yet for %s (%s); blocking entry",
                 candidate["pair"],
                 candidate["candidate_id"],
@@ -298,16 +406,36 @@ class H1JevShadow(H1ChannelBreakout):
 
         available_at = _parse_utc(assessment.get("available_at"))
         if available_at is None:
-            logger.warning(
+            self._jev_log_block(
+                logging.WARNING,
+                candidate["candidate_id"],
+                "no_available_at",
                 "Jev filter: assessment for %s has no usable available_at; blocking entry",
                 candidate["candidate_id"],
             )
             return False
 
-        expires_at = available_at + timedelta(minutes=self._jev_ttl_minutes())
         now = datetime.now(UTC)
+        if available_at > now:
+            # An assessment cannot be available in the future: a wrong clock or
+            # a hand-edited line. Treat it as not yet valid, never as an approval.
+            self._jev_log_block(
+                logging.WARNING,
+                candidate["candidate_id"],
+                "future_available_at",
+                "Jev filter: assessment for %s is dated in the future (%s, now %s); blocking entry",
+                candidate["candidate_id"],
+                available_at.isoformat(),
+                now.isoformat(),
+            )
+            return False
+
+        expires_at = available_at + timedelta(minutes=self._jev_ttl_minutes())
         if expires_at < now:
-            logger.info(
+            self._jev_log_block(
+                logging.INFO,
+                candidate["candidate_id"],
+                "expired",
                 "Jev filter: assessment for %s expired at %s (now %s); blocking entry",
                 candidate["candidate_id"],
                 expires_at.isoformat(),
@@ -317,7 +445,10 @@ class H1JevShadow(H1ChannelBreakout):
 
         decision = assessment.get("decision")
         if decision != "approve":
-            logger.info(
+            self._jev_log_block(
+                logging.INFO,
+                candidate["candidate_id"],
+                f"decision={decision!r}",
                 "Jev filter: assessment for %s decision=%r; blocking entry",
                 candidate["candidate_id"],
                 decision,

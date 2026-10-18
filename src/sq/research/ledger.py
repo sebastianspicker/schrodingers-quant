@@ -123,7 +123,10 @@ def _check_date(value: object, name: str) -> None:
 
 def load_ledger(path: Path | str) -> dict:
     """Read and validate a ledger file; raise ValueError with the reason if invalid."""
-    ledger = json.loads(Path(path).read_text())
+    try:
+        ledger = json.loads(Path(path).read_text())
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{path}: not valid JSON ({exc})") from exc
     if not isinstance(ledger, dict):
         raise ValueError("ledger: expected an object")
     if ledger.get("schema_version") != SCHEMA_VERSION:

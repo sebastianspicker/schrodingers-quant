@@ -7,6 +7,25 @@ scope. Schema 3 includes all three configured protections as well as the
 mathematical and interpretation corrections introduced in schema 2. H1's frozen rules and forward thresholds
 are unchanged.
 
+## Rebuilding physics.json
+
+`make physics` needs uv but not Docker, takes about eight minutes, and
+**rewrites the tracked** `research/experiments/H1/physics.json` in place.
+On macOS, where the tracked file was built, a rebuild has been byte-identical,
+so `git diff` stays empty. On another operating system, CPU or numpy build the
+fitted parameters and Monte Carlo shares can differ in their last digits, so
+`git diff` shows small numeric changes. `make test` accepts differences within
+the bounds of [ADR-0008](adr/0008-physics-informed-nulls.md) §6 and fails on
+larger ones. To compare without touching the tracked file, write elsewhere:
+
+```sh
+mkdir -p build
+make physics ARGS="--out build/physics.json"
+```
+
+`--null-trials`, `--calibration-trials` and `--first-passage-trials` (at least
+25 each) shorten a run for a quick look; such a file is not the record.
+
 ## What the diagnostics measure
 
 Statistical physics supplies useful descriptions of fluctuations, surrogate

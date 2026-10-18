@@ -1,5 +1,5 @@
 [Unit]
-Description=Schrödingers Quant weekly retention (OHLCV cache, dangling images)
+Description=Schrödingers Quant weekly retention (dangling and superseded Freqtrade images)
 Documentation=file:///opt/schrodingers-quant/ops/README.md
 After=schrodingers-quant.service
 OnFailure=sq-alert@%n.service

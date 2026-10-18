@@ -39,6 +39,10 @@ or research container runs on the VPS. The normal SQLite backup includes it.
 The report rejects gaps, invalid OHLCV, conflicting duplicate/revised candles,
 and a last closed mark older than one additional 4h publication interval.
 A revised historical candle needs investigation; it is not overwritten. A
+candle is archived (and from then on immutable) only once it closed at least
+one further 4h interval ago; the report still uses the newest closed candle,
+and a later run archives it, so an exchange revising a bar shortly after its
+close is not mistaken for a revision of history. A
 complete, validated Kraken history can be supplied using `--candles <feather
 or ccxt-row JSON>`. Add `--archive <runtime/market-data.sqlite>` to merge that
 import deliberately. `--candles` alone does not modify the archive. Imports
@@ -143,4 +147,6 @@ or start date to make a drawdown disappear. A deliberate new configuration or
 window needs a separately documented closure, preserved manifest and declared
 new start/capital. Backups include reports and market-data.sqlite; restoring a
 trade database alone does not restore evidence. Restore those matching evidence
-files too, preserve the latch, and keep the bot stopped until checked.
+files too (`ops/restore.sh ... --with-evidence`, which keeps what it replaces as
+`.pre-restore.<timestamp>`), preserve the latch, and keep the bot stopped until
+checked.

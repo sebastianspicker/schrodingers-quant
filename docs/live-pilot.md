@@ -36,9 +36,11 @@ an order: `sq.live.preflight` and `sq.live.reconcile` are read-only, and
 - The unattended dry-run soak on the VPS has passed
   ([soak checklist](../ops/soak-checklist.md)): control, health, backups and
   recovery drills rehearsed.
-- `make preflight-live ARGS="--pair BTC/EUR --stake 8 --stoploss -0.20"`
+- `make preflight-live ARGS="--pair BTC/EUR --stake 8"`
   (`sq.live.preflight --require-account-data`) exits 0 for the pair, stake and
-  stoploss actually configured. This target layers the live config and local
+  stoploss actually configured. Without `--stoploss`, preflight reads the
+  stoploss from the configured strategy (`H1ChannelBreakout.stoploss`), so it
+  cannot drift from what the bot uses. This target layers the live config and local
   secrets and refuses to pass unless it reads the account's real fee tier and
   EUR balance, not just market defaults.
 - Preflight assumes Kraken's default convention: the entry (buy) fee is charged
@@ -128,9 +130,22 @@ Run `make reconcile` (`sq.live.reconcile`) at least once a day while the live
 pilot is active (for example from a VPS cron entry or a systemd timer), and
 immediately after each drill above. It is read-only: it never calls a ccxt
 method that changes orders. It exits 0 on a clean match, 3 on any mismatch,
-and 1 on an error (for example missing credentials or an unreachable exchange).
+and 1 on an error (for example invalid arguments, missing credentials or an
+unreachable exchange).
 It also exits 1 rather than claiming a match if its bounded closed-order query
-reaches the configured pagination limit.
+reaches the configured pagination limit. It reads the live trade database
+(`live.sqlite`, from the live config's `db_url`), which exists only after the
+bot has run with the live config at least once; before that it exits 1 with
+"trade database not found". A database the bot holds locked, or one with an
+unrecognized schema, is reported as such.
+
+Each entry in the report's `mismatches` has a `kind`: `missing_db_order` (a
+Kraken fill with no DB order), `missing_exchange_order` (a filled, closed DB
+order dated inside the queried window that Kraken does not report, e.g. a
+dry-run fill in the live database), `amount_mismatch` or `fee_mismatch`
+(beyond 0.1 % of the order plus a one-satoshi floor), `stale_open_order` (open
+in the DB, closed or canceled on Kraken) and `dust` (base balance vs. open
+trade amounts).
 
 ```sh
 make reconcile   # base + live + config/local/secrets.json, in the tools container
@@ -143,10 +158,12 @@ Run the daily forward report alongside it, with the live layers, so that it
 reads `live.sqlite`:
 
 ```sh
-make forward-report ARGS="--config /freqtrade/config/base.json --config /freqtrade/config/live.json"
+make forward-report ARGS="--config /freqtrade/config/base.json --config /freqtrade/config/live.json --since <window start> --initial-capital <EUR at window start>"
 ```
 
-It is read-only and needs no credentials. Exit code 4 is a STOP (see §6). It
+A live database has no `dry_run_wallet` to infer the account capital from, so
+`--initial-capital` is required (the report exits 1 without it); use the same
+`--since` and capital on every run. It is read-only and needs no credentials. Exit code 4 is a STOP (see §6). It
 has not yet been run against a real database.
 ## 5. Evidence to record throughout the pilot
 
@@ -191,7 +208,8 @@ Recorded 2026-09-24 from public Kraken market data (`load_markets`,
 (`freqtradeorg/freqtrade:2026.8@sha256:4d23160b501d2b34579e76f57ad75edfa274967cd0dd824ff1c1b86d8c166ab4`),
 using the then-current `scripts/live/preflight.py` (now `sq.live.preflight`,
 same code). Rerun with
-`make preflight ARGS="--pair BTC/EUR --stake <8|10> --stoploss -0.20"`.
+`make preflight ARGS="--pair BTC/EUR --stake <8|10>"` (the stoploss
+defaults to the strategy's, −20 %).
 
 Both runs report `"feasible": true, "reasons": []` and exit code `0`.
 

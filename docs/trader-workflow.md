@@ -1,18 +1,43 @@
 # Using the research desk on a small VPS
 
 The decision desk turns the archived experiment into a risk and operating-cost
-worksheet. It runs offline in Python's standard library, reads two small JSON
-files, and performs no downloads, backtests, parameter search or resampling.
-Run it on your laptop or the VPS; Docker and Freqtrade are not required.
+worksheet. It runs offline on Python's standard library, reads the experiment's
+`equity-curves.json`, `statistics.json` and, when present, `physics.json`, and
+performs no downloads, backtests, parameter search or resampling. Run it on
+your laptop or the VPS; Docker and Freqtrade are not required.
+
+## Set up and run
+
+You need Python 3.11 or newer. The simplest route is
+[uv](https://docs.astral.sh/uv/), which installs a suitable Python for you;
+macOS's system `python3` (3.9) is too old and fails with a `TypeError`.
 
 ```sh
-PYTHONPATH=src python -m sq.research.desk
-PYTHONPATH=src python -m sq.research.desk \
-  --experiment research/experiments/H1 --out-dir build/desk \
-  --monthly-cost-eur 10
+uv sync --locked --group dev
+make desk                                  # writes build/desk/
+make desk ARGS="--monthly-cost-eur 10"     # with your monthly VPS cost
 ```
 
-The second command's €10 monthly cost is an example input. Supply your own VPS
+`make desk` runs `python -m sq.research.desk` (options: `--experiment`,
+`--out-dir`, `--monthly-cost-eur`). Without uv, any Python 3.11+ works:
+`PYTHONPATH=src python3 -m sq.research.desk`.
+
+The desk only reads the archived figures. Two other targets rebuild the inputs
+it reads, also without Docker:
+
+| Command | Rebuilds | Time |
+| --- | --- | --- |
+| `make stats` | `research/experiments/H1/statistics.json` (bootstrap intervals, random-timing benchmark) | under a minute |
+| `make physics` | `research/experiments/H1/physics.json` (null models, forward calibration, growth and Kelly figures) | about eight minutes |
+
+Both rewrite the tracked file in place. `make stats` reproduces it exactly;
+`make physics` can differ in the last digits on another platform, so read
+[rebuilding physics.json](physics.md#rebuilding-physicsjson) first or write
+elsewhere (`mkdir -p build`, then `make physics ARGS="--out build/physics.json"`).
+The desk refuses
+a `statistics.json` or `physics.json` built from different curves.
+
+The €10 monthly cost above is an example input. Supply your own VPS
 cost, or your defensible allocated share when it also hosts other services.
 The default is zero; the desk never invents a hosting price. Outputs overwrite
 `report.md`, `report.json` and `monthly-returns.csv` in the chosen directory.
@@ -60,6 +85,18 @@ the same fills and fee percentages, ignores cash yield and taxes, and cannot
 capture capital-dependent execution costs. Keep deployment decisions outside
 this historical worksheet. For a forward paper experiment, the VPS bill is a
 research budget even when the strategy produces no trading income.
+
+## Read growth and sizing as description
+
+With `physics.json` present, each run in `report.md` ends with a "Growth and
+sizing" block: mean and time-average (log) growth per trade with the volatility
+drag between them, the Kelly fraction with its 95% bootstrap interval and the
+share of resamples that say not to trade, and a table of annualised growth and
+compounding drawdown at several fixed fractions. These describe the record.
+A Kelly fraction estimated from a handful of trades is too uncertain to size a
+position with; [Physics](physics.md#growth-and-sizing) explains each figure and
+its limits. Without `physics.json` the block says so and the rest of the report
+is unchanged.
 
 ## Qualify the evidence and decide what to investigate next
 

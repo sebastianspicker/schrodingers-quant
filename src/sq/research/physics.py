@@ -175,10 +175,23 @@ def write_physics(
     ledger_path: Path = DEFAULT_LEDGER,
     **kwargs,
 ) -> Path:
-    curves_raw = (experiment / "equity-curves.json").read_bytes()
+    curves_path = experiment / "equity-curves.json"
+    curves_raw = curves_path.read_bytes()
+    try:
+        curves = json.loads(curves_raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{curves_path}: not valid JSON ({exc})") from exc
+    runs = curves.get("runs") if isinstance(curves, dict) else None
+    missing = [key for key in NULL_RUNS if not isinstance(runs, dict) or key not in runs]
+    if missing:
+        raise ValueError(
+            f"{curves_path}: physics needs the runs {', '.join(NULL_RUNS)}; "
+            f"missing {', '.join(missing)}"
+        )
+    proxy_data.verify_manifest(candles_path)
     candles = proxy_data.load_candles(candles_path)
     document = build_physics(
-        json.loads(curves_raw),
+        curves,
         candles,
         ledger.load_ledger(ledger_path),
         candles_sha256=proxy_data.sha256(candles_path),

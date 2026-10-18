@@ -56,6 +56,7 @@ services:
     stop_grace_period: 10s
     cpus: 0.5
     mem_limit: 256m
+    pids_limit: 128
     entrypoint: []
     command:
       - python
@@ -72,6 +73,11 @@ services:
     volumes:
       - ./src:/workspace/src:ro
       - ./user_data/runtime/jev:/jev-runtime
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   tools:
     <<: *tool

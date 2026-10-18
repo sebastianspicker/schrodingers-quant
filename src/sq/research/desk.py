@@ -9,6 +9,7 @@ import csv
 import hashlib
 import json
 import math
+from contextlib import contextmanager
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -28,12 +29,28 @@ def number(value: object, name: str, low: float, high: float) -> float:
     return float(value)
 
 
-def read_json(path: Path) -> tuple[dict, str]:
+@contextmanager
+def reading(name: str):
+    """Turn a missing key or wrong type in input file `name` into a ValueError naming it."""
+    try:
+        yield
+    except KeyError as exc:
+        raise ValueError(f"missing key {exc} in {name}") from None
+    except (AttributeError, TypeError, IndexError) as exc:
+        raise ValueError(f"{name}: unexpected structure ({exc})") from None
+
+
+def read_json(path: Path, hint: str = "") -> tuple[dict, str]:
+    if not path.exists():
+        raise ValueError(f"{path}: not found{hint}")
     with path.open("rb") as stream:
         raw = stream.read(MAX_BYTES + 1)
     if len(raw) > MAX_BYTES:
         raise ValueError(f"{path.name}: exceeds {MAX_BYTES} bytes")
-    value = json.loads(raw)
+    try:
+        value = json.loads(raw)
+    except ValueError as exc:  # JSONDecodeError and UnicodeDecodeError
+        raise ValueError(f"{path.name}: not valid JSON ({exc})") from None
     if not isinstance(value, dict):
         raise ValueError(f"{path.name}: expected an object")
     return value, hashlib.sha256(raw).hexdigest()
@@ -60,6 +77,7 @@ def validate_run(run: dict, name: str) -> None:
             number(value, f"{name}.{series}", 0.000001, 1e15)
     for key in ("mtm_max_drawdown_pct", "buy_hold_max_drawdown_pct"):
         number(run[key], f"{name}.{key}", 0, 100)
+    number(run["buy_hold_net_return_pct"], f"{name}.buy_hold_net_return_pct", -100, 1e9)
     trades = run["trades"]
     if not isinstance(trades, list) or len(trades) > MAX_DAYS:
         raise ValueError(f"{name}: invalid trade count")
@@ -209,8 +227,10 @@ def evidence(stats: dict) -> dict:
 
 def build_report(experiment: Path, monthly_cost_eur: float = 0) -> dict:
     monthly_cost_eur = number(monthly_cost_eur, "monthly cost EUR", 0, 1e6)
-    curves, curves_hash = read_json(experiment / "equity-curves.json")
-    stats, stats_hash = read_json(experiment / "statistics.json")
+    curves, curves_hash = read_json(
+        experiment / "equity-curves.json", "; run make research ARGS=equity-curves"
+    )
+    stats, stats_hash = read_json(experiment / "statistics.json", "; run make stats")
     if stats.get("source_sha256") != curves_hash:
         raise ValueError(
             "statistics source hash differs from equity-curves.json; rebuild statistics"
@@ -223,21 +243,27 @@ def build_report(experiment: Path, monthly_cost_eur: float = 0) -> dict:
     if physics_path.exists():
         physics, physics_hash = read_json(physics_path)
         if physics.get("equity_curves_sha256") != curves_hash:
-            raise ValueError("physics source hash differs from equity-curves.json; rebuild physics")
+            raise ValueError(
+                "physics source hash differs from equity-curves.json; rebuild physics: make physics"
+            )
         if not isinstance(physics.get("growth"), dict):
-            raise ValueError("physics.json has no growth block; rebuild physics")
+            raise ValueError("physics.json has no growth block; run make physics")
     if curves.get("timeframe", "4h") != "4h":
         raise ValueError("desk expects the archived 4h experiment contract")
-    notional = number(curves["notional_eur"], "notional EUR", 0.000001, 1e12)
-    runs = curves["runs"]
+    with reading("equity-curves.json"):
+        notional = number(curves["notional_eur"], "notional EUR", 0.000001, 1e12)
+        pair = curves["pair"]
+        runs = curves["runs"]
     if not isinstance(runs, dict) or not 1 <= len(runs) <= MAX_RUNS:
         raise ValueError(f"expected 1..{MAX_RUNS} runs")
-    if runs.keys() != stats["runs"].keys():
-        raise ValueError("equity and statistics run sets differ")
+    with reading("statistics.json"):
+        stats_runs = stats["runs"]
+        if runs.keys() != stats_runs.keys():
+            raise ValueError("equity and statistics run sets differ")
     report = {
         "schema_version": 1,
         "experiment": experiment.name,
-        "pair": curves["pair"],
+        "pair": pair,
         "initial_notional_eur": notional,
         "source_sha256": curves_hash,
         "statistics_sha256": stats_hash,
@@ -271,27 +297,42 @@ def build_report(experiment: Path, monthly_cost_eur: float = 0) -> dict:
         "runs": {},
     }
     for name, run in runs.items():
-        validate_run(run, name)
-        report["runs"][name] = {
-            "start": run["start"],
-            "end_exclusive": run["end"],
-            "first_daily_mark": run["dates"][0],
-            "daily_marks": len(run["dates"]),
-            "strategy": curve_risk(run["strategy"], run["dates"], run["start"], notional),
-            "buy_hold": curve_risk(run["buy_hold"], run["dates"], run["start"], notional),
-            "recorded_strategy_drawdown_pct_4h": run["mtm_max_drawdown_pct"],
-            "recorded_buy_hold_drawdown_pct_4h": run["buy_hold_max_drawdown_pct"],
-            "concentration": concentration(run["trades"]),
-            "evidence": evidence(stats["runs"][name]),
-            "sleeves": sleeve_scenarios(run, notional, monthly_cost_eur),
-            "monthly": monthly_returns(run, notional),
-            "growth": physics.get("growth", {}).get(name) if physics else None,
-        }
+        with reading("equity-curves.json"):
+            validate_run(run, name)
+        with reading("statistics.json"):
+            run_evidence = evidence(stats_runs[name])
+        with reading("equity-curves.json"):
+            report["runs"][name] = {
+                "start": run["start"],
+                "end_exclusive": run["end"],
+                "first_daily_mark": run["dates"][0],
+                "daily_marks": len(run["dates"]),
+                "strategy": curve_risk(run["strategy"], run["dates"], run["start"], notional),
+                "buy_hold": curve_risk(run["buy_hold"], run["dates"], run["start"], notional),
+                "recorded_strategy_drawdown_pct_4h": run["mtm_max_drawdown_pct"],
+                "recorded_buy_hold_drawdown_pct_4h": run["buy_hold_max_drawdown_pct"],
+                "recorded_buy_hold_return_pct": run["buy_hold_net_return_pct"],
+                "concentration": concentration(run["trades"]),
+                "evidence": run_evidence,
+                "sleeves": sleeve_scenarios(run, notional, monthly_cost_eur),
+                "monthly": monthly_returns(run, notional),
+                "growth": physics.get("growth", {}).get(name) if physics else None,
+            }
     return report
 
 
 def fmt(value: float | None) -> str:
     return "n/a" if value is None else f"{value:,.2f}"
+
+
+NO_COST = "n/a (no hosting cost given)"
+
+
+def break_even(report: dict, sleeve: dict) -> str:
+    """Break-even capital as text; with a zero monthly cost it is undefined, not 0."""
+    if report["monthly_cost_eur"] == 0:
+        return NO_COST
+    return fmt(sleeve["historical_cost_break_even_capital_eur"])
 
 
 def markdown(report: dict) -> str:
@@ -313,7 +354,9 @@ def markdown(report: dict) -> str:
         lines += [
             f"## {name}: {run['start']} → {run['end_exclusive']} (end exclusive)",
             "",
-            f"Curve return {fmt(s['return_pct'])}%; B&H {fmt(b['return_pct'])}%. "
+            f"Curve return {fmt(s['return_pct'])}%; B&H {fmt(b['return_pct'])}% on the same "
+            f"closes (recorded benchmark {fmt(run['recorded_buy_hold_return_pct'])}%, to 00:00 "
+            "UTC of its end date). "
             f"Authoritative recorded 4h max DD {fmt(run['recorded_strategy_drawdown_pct_4h'])}% "
             f"(B&H {fmt(run['recorded_buy_hold_drawdown_pct_4h'])}%).",
             f"DAILY max DD including initial equity {fmt(s['max_drawdown_pct_daily'])}%; "
@@ -346,7 +389,7 @@ def markdown(report: dict) -> str:
                 f"| {sleeve['strategy_sleeve_pct']:.0f}% / {sleeve['idle_cash_pct']:.0f}% "
                 f"| {fmt(sleeve['return_pct'])} | {fmt(sleeve['max_drawdown_pct_daily'])} "
                 f"| {fmt(sleeve['observed_average_annual_cash_return_pct'])} "
-                f"| {fmt(sleeve['historical_cost_break_even_capital_eur'])} | {sensitivity} |"
+                f"| {break_even(report, sleeve)} | {sensitivity} |"
             )
         lines += [
             "",
@@ -402,6 +445,7 @@ def markdown(report: dict) -> str:
     lines += [
         f"Equity input SHA-256: `{report['source_sha256']}`.",
         f"Statistics input SHA-256: `{report['statistics_sha256']}`.",
+        f"Physics input SHA-256: `{report['physics_sha256'] or 'n/a (no physics.json)'}`.",
         "Statistics are accepted only when their source hash matches the equity input.",
         "",
     ]
@@ -441,25 +485,45 @@ def terminal_summary(report: dict) -> str:
         report["contamination"],
     ]
     for sleeve in focus["sleeves"]:
+        capital = break_even(report, sleeve)
         lines.append(
             f"Focus sleeve {sleeve['strategy_sleeve_pct']:.0f}%: return "
             f"{sleeve['return_pct']:.2f}%, DAILY DD {sleeve['max_drawdown_pct_daily']:.2f}%, "
             f"historical VPS break-even capital "
-            f"€{fmt(sleeve['historical_cost_break_even_capital_eur'])}"
+            f"{capital if capital.startswith('n/a') else '€' + capital}"
         )
     return "\n".join(lines)
 
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--experiment", type=Path, default=ROOT / "research/experiments/H1")
-    parser.add_argument("--out-dir", type=Path, default=ROOT / "build/desk")
-    parser.add_argument("--monthly-cost-eur", type=float, default=0)
+    parser.add_argument(
+        "--experiment",
+        type=Path,
+        default=ROOT / "research/experiments/H1",
+        help="Experiment directory holding equity-curves.json and statistics.json "
+        "(optionally physics.json); default: %(default)s",
+    )
+    parser.add_argument(
+        "--out-dir",
+        type=Path,
+        default=ROOT / "build/desk",
+        help="Where report.md, report.json and monthly-returns.csv go; default: %(default)s",
+    )
+    parser.add_argument(
+        "--monthly-cost-eur",
+        type=float,
+        default=0,
+        help="Your monthly hosting cost in EUR, for the break-even capital columns "
+        "(0 = none given); default: %(default)s",
+    )
     args = parser.parse_args(argv)
     try:
         report = build_report(args.experiment, args.monthly_cost_eur)
         write_report(report, args.out_dir)
-    except (ValueError, KeyError, TypeError, OSError) as exc:
+    except KeyError as exc:  # e.g. a malformed growth block read while writing the report
+        parser.error(f"missing key {exc} in the experiment's records")
+    except (ValueError, AttributeError, TypeError, OSError) as exc:
         parser.error(str(exc))
     print(terminal_summary(report))
     print(f"Wrote {args.out_dir}: report.md, report.json, monthly-returns.csv")

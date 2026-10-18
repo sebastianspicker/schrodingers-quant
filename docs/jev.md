@@ -87,13 +87,21 @@ config key currently survives Freqtrade's schema validation.
 - `"shadow"`: records each entry candidate to `candidates.jsonl` and always
   returns `True` (approves the entry). Orders are never affected.
 - `"filter"`: records the candidate, then blocks the entry unless an assessment
-  for it exists, has not expired (`available_at + ttl >= now`), and has the
-  `decision` `"approve"`. Any internal error (a missing DataProvider,
+  for it exists, is already available (`available_at <= now`; a future-dated
+  `available_at` is blocked), has not expired (`available_at + ttl >= now`), and
+  has the `decision` `"approve"`. Any internal error (a missing DataProvider,
   unreadable files, a malformed assessment line, …) is caught inside the
   strategy and treated as a block. This matters because Freqtrade's own
   `strategy_safe_wrapper` treats an *uncaught* exception here as
   `default_retval=True` (allow), which would silently defeat a filter; see the
   "why never raise" section of the module docstring.
+
+A malformed `jev` setting stops the bot from starting instead of falling back
+to `"off"`: a `jev` value that is not an object, a `jev` object without `mode`,
+or a `mode` (or `SQ_JEV_MODE`) that is not exactly `off`, `shadow` or `filter`,
+plus a non-numeric or non-positive `assessment_ttl_minutes`. This is deliberate,
+so a typo such as `{"jev": {"mod": "filter"}}` cannot silently disable a filter.
+The effective mode, directory and TTL are logged once at startup.
 
 ### Retry window for a rejected entry
 
@@ -132,43 +140,79 @@ once per `candidate_id`, ever:
 {"candidate_id": "<sha256 hex>", "input": {"...": "the exact candidate payload sent"}, "input_timestamp": "2026-09-24T12:00:03.123456+00:00", "model": "null", "model_version": "v0", "prompt_version": "sha256:<hex prefix>", "decision": "abstain", "rationale": "...", "confidence": null, "requested_at": "2026-09-24T12:05:00+00:00", "available_at": "2026-09-24T12:05:00.010000+00:00", "latency_ms": 10.0, "error": null}
 ```
 
-`decision` is one of `approve`, `reject` or `abstain`. `confidence`, if
+`decision` is one of `approve`, `reject` or `abstain`. A provider answer outside that set is recorded as `abstain` with
+`error: "InvalidDecision"`. `confidence`, if
 present, is the provider's own confidence in its decision, **not** a calibrated
 probability of trade profit. A provider exception or timeout is recorded as
 `decision: "abstain"` with `error` set to the exception's class name (or
 `"TimeoutError"`). A late provider call cannot hold up the worker loop, and at
 most one late call per provider remains in flight; a real provider must also
 set its own network timeout so that discarded call releases its resources. The
-worker never crashes and never silently drops a candidate.
+worker does not die on bad input: a candidate line that is not a JSON object
+is logged and skipped, provider output that cannot be written as JSON becomes an
+`abstain` with `error: "UnserialisableAssessment"`, and an unexpected failure in
+one polling pass is logged and retried on the next one. It never silently drops
+a candidate that has an id.
 
 **`worker_cursor.txt`** stores a byte offset into `candidates.jsonl`, so a
-restarted worker resumes without rescanning the whole file.
-**`worker.lock`** is an exclusive lock file that guarantees a single worker
-instance; it exists only while a worker run is in progress.
+restarted worker resumes without rescanning the whole file. If the
+cursor is beyond the end of `candidates.jsonl` (the file was truncated by hand),
+the worker logs it and rescans from 0; candidates that already have an
+assessment are not queried again. If `<dir>` is not writable by the container
+user (for example a root-owned bind mount), the worker logs one error naming the
+directory and exits; fix the ownership and restart. Neither file is rotated:
+delete or archive them by hand when they grow large, with the worker stopped.
+**`worker.lock`** guarantees a single worker instance: the running worker holds
+an exclusive `flock` on it. The file is never deleted, so its presence does not
+mean a worker is running; the kernel releases the lock when the process ends,
+so a stale file never blocks a restart.
 
 ## Running shadow mode
 
 Shadow mode never affects orders, so it is safe to run against the tracked
-dry-run bot. Create a local overlay (ignored by git, not committed):
+dry-run bot. `config/base.json` alone cannot be started: it has
+`initial_state: stopped` with the API server and Telegram disabled, so nothing
+could send `/start`. Use the VPS flow (`ops/README.md`), which adds those, and
+insert the Jev overlay as one more layer.
 
-```json
-// config/local/jev-shadow.json
-{
-  "strategy": "H1JevShadow",
-  "jev": {"mode": "shadow"}
-}
-```
+1. Create the overlay (a local file, not committed):
 
-Then layer it in, either through `compose.override.yaml` (see
-`compose.override.example.yaml`) by adding
-`--config /freqtrade/config/local/jev-shadow.json` to the `command` list, or
-directly with `docker compose run`:
+   ```json
+   // config/local/jev-shadow.json
+   {
+     "strategy": "H1JevShadow",
+     "jev": {"mode": "shadow"}
+   }
+   ```
 
-```sh
-docker compose run --rm freqtrade trade \
-  --config /freqtrade/config/base.json \
-  --config /freqtrade/config/local/jev-shadow.json
-```
+2. In `compose.vps.yaml` (your copy of `compose.vps.example.yaml`, not
+   `compose.override.yaml`), add the overlay to the `command` list. Compose
+   replaces that list on override, so restate all of it, in the order base,
+   vps, jev-shadow, secrets:
+
+   ```yaml
+   services:
+     freqtrade:
+       command:
+         - trade
+         - --config
+         - /freqtrade/config/base.json
+         - --config
+         - /freqtrade/config/local/vps.json
+         - --config
+         - /freqtrade/config/local/jev-shadow.json
+         - --config
+         - /freqtrade/config/local/secrets.json
+   ```
+
+   `secrets.json` goes last, as in the example file. Keep the `ports:` entry
+   from the example. Check the layering with `docker compose config --quiet`,
+   then recreate the container with `docker compose up -d`.
+
+3. The bot starts `stopped`. Send `/start` over Telegram (or through the API
+   via the SSH tunnel) as described in `ops/README.md` section 3. Candidates
+   then appear in `user_data/runtime/jev/candidates.jsonl` as entry signals
+   fire.
 
 To also run the worker, which writes only `NullProvider` abstains until a real
 provider exists:
@@ -204,7 +248,11 @@ runs before the `Trade` exists, so it cannot attach one.
 *preceding* recorded candidate for the same pair, within `--max-lag-hours`
 (default 8 h, twice H1's timeframe). Only assessments with `available_at`
 strictly before the trade's entry time are used, so a backtest export from a
-forward run cannot leak a same-run assessment into its own comparison. Treat
+forward run cannot leak a same-run assessment into its own comparison. The live filter
+also blocks approvals older than its TTL; the comparison does not apply that by
+default (so earlier results stay comparable), but `--ttl-minutes 60` does, and
+such trades are reported as `expired` and counted in
+`trades_lost_for_lack_of_timely_assessment`. Treat
 this matching as an approximation. An exact link (for example a persisted
 per-trade tag) is future work if the approximation proves too coarse; this
 harness does not invent one now.

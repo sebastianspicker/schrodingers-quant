@@ -24,17 +24,22 @@ machine. For a server, use the runbooks:
 | `make test` | The unit tests (`uv run --locked pytest`); needs only uv, no Docker |
 | `make check` | `make test`, then Ruff lint and format check, shellcheck, Compose syntax with both overlay examples |
 | `make stats` | Rebuilds `research/experiments/H1/statistics.json` from the recorded equity curves (fixed seed); needs only uv, no Docker. A test fails if the tracked file drifts from a fresh build |
+| `make physics` | Rebuilds `research/experiments/H1/physics.json` in place (about eight minutes); needs only uv, no Docker. Last digits can differ on another platform; `ARGS="--out build/physics.json"` writes elsewhere ([physics](physics.md#rebuilding-physicsjson)) |
+| `make desk` | Offline trader report in `build/desk/` from the recorded curves, statistics and physics; needs only uv ([trader workflow](trader-workflow.md)) |
 | `make validate` | Tracked `config/base.json` alone: invariants and strategy load |
-| `make validate-local` | Also base + `config/local/secrets.json` if present |
+| `make validate-local` | Also base + `config/local/vps.json` + `config/local/secrets.json`, each if present |
 | `make validate-live` / `make validate-vps` | Base + tracked live or VPS overlay |
+| `make validate-report` | Checks the forward CLI, ORM schema and H2 callback against the pinned Freqtrade image (`tests/check_freqtrade_contract.py`); needs Docker |
 | `make ci` | `make check` (so the unit tests too) plus the base, live and VPS validations above |
 | `make research ARGS="…"` | `python -m sq.research` subcommands in the `research` service; with no argument it lists them |
-| `make preflight ARGS="--pair BTC/EUR --stake 8 --stoploss -0.20"` | Read-only Kraken feasibility check |
-| `make preflight-live ARGS="--pair BTC/EUR --stake 8 --stoploss -0.20"` | Same check with live layers; requires authenticated fee and balance reads |
+| `make preflight ARGS="--pair BTC/EUR --stake 8"` | Read-only Kraken feasibility check; the stoploss defaults to the strategy's |
+| `make preflight-live ARGS="--pair BTC/EUR --stake 8"` | Same check with live layers; requires authenticated fee and balance reads |
 | `make reconcile` | Read-only comparison of the trade database with Kraken; needs secrets |
 | `make forward-report ARGS="…"` | Read-only forward paper-trading report from the trade database and public Kraken candles; exit 0 CONTINUE, 4 STOP, 1 error. No credentials with the default config |
 | `make backup` | `ops/backup.sh`: every `user_data/runtime/*.sqlite` plus the Jev records |
-| `make retention` | `ops/retention.sh`: prunes dangling images (dry-run unless `ARGS=--apply`) |
+| `make retention` | `ops/retention.sh`: prunes dangling images and superseded Freqtrade images other than the pinned digest (dry-run unless `ARGS=--apply`) |
+| `make pull` | Pulls the Compose images for the `tools` and `jev` profiles (`--ignore-buildable`); needs Docker |
+| `make format` | Formats the code in place (`ruff format .`); `make check` only verifies it |
 | `make up`, `make down`, `make logs`, `make status` | Local container lifecycle |
 | `make research ARGS=equity-curves`, then `sh pages/build.sh` | Rebuild the demo's data from the recorded backtests and assemble the site in `build/pages/` (published by `.github/workflows/pages.yml`) |
 

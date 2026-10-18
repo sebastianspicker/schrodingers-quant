@@ -18,8 +18,9 @@
 #   config/local/vps.json     - a copy of config/examples/vps-dryrun.example.json
 #                                with telegram token/chat_id filled in
 #   config/local/secrets.json - a copy of config/examples/secrets.example.json
-#                                with api_server username/password/jwt_secret_key
-#                                and telegram token/chat_id filled in
+#                                with api_server username/password/jwt_secret_key/
+#                                ws_token and telegram token/chat_id filled in
+# `make validate-local` checks this layering (base -> vps -> secrets).
 #
 # Compose replaces (does not append to) the "command" list on override, so the
 # full --config layering is restated here: base -> vps -> secrets.

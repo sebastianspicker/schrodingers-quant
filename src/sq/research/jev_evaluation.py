@@ -13,8 +13,14 @@ therefore matches each trade to the nearest *preceding* recorded candidate
 for the same pair, within `--max-lag-hours` of the trade's entry time, using
 the candidate payload embedded in each assessment's `input` field. This is an
 approximation of the true candidate-to-trade link, documented here and in
-README.md; treat unmatched or ambiguous trades conservatively (they count as
+docs/jev.md; treat unmatched or ambiguous trades conservatively (they count as
 "lost for lack of a timely assessment", never as an assumed approval).
+
+The live filter also rejects an approval older than its TTL
+(`assessment_ttl_minutes`, default 60) when the entry is confirmed. That rule
+is off here by default so that existing results stay comparable; pass
+`ttl_minutes` (CLI: `--ttl-minutes`) to apply it, which turns an approval older
+than the TTL at entry time into reason "expired".
 
 Net return is measured against a fixed notional (`--wallet`), consistent with
 H1's fixed-stake sizing (ADR-0005) and sq.research.metrics. If `--candles` is
@@ -26,7 +32,7 @@ Run as `python -m sq.research jev-evaluate` (see `sq.research.__main__`).
 
 import argparse
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -101,8 +107,14 @@ def _candidate_pool_from_assessments(assessments: list[dict]) -> dict[str, list[
     return by_pair
 
 
+MATCH_COLUMNS = ["open_date", "pair", "candidate_id", "reason", "included"]
+
+
 def match_trades(
-    trades: pd.DataFrame, assessments: list[dict], max_lag_hours: float = DEFAULT_MAX_LAG_HOURS
+    trades: pd.DataFrame,
+    assessments: list[dict],
+    max_lag_hours: float = DEFAULT_MAX_LAG_HOURS,
+    ttl_minutes: float | None = None,
 ) -> pd.DataFrame:
     """One row per trade (trades sorted by open_date), with a match `reason`
     and `included` flag for the filtered comparison.
@@ -110,6 +122,8 @@ def match_trades(
     reason:
       - "approved": a candidate matched, its newest assessment was available
         before entry and decided "approve" -> included in the filtered set.
+      - "expired": only with `ttl_minutes`: matched and available before entry,
+        but older than the TTL at entry time (the live filter would block it).
       - "rejected": matched, available before entry, decision != "approve".
       - "late_or_missing_availability": matched, but the assessment became
         available at or after the trade's entry time (would be leakage to
@@ -168,6 +182,19 @@ def match_trades(
                     "included": False,
                 }
             )
+        elif (
+            ttl_minutes is not None
+            and match["available_at"] + timedelta(minutes=ttl_minutes) < trade.open_date
+        ):
+            rows.append(
+                {
+                    "open_date": trade.open_date,
+                    "pair": pair,
+                    "candidate_id": match["candidate_id"],
+                    "reason": "expired",
+                    "included": False,
+                }
+            )
         elif match["decision"] != "approve":
             rows.append(
                 {
@@ -189,7 +216,7 @@ def match_trades(
                 }
             )
 
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, columns=MATCH_COLUMNS)
 
 
 # --- summary -----------------------------------------------------------
@@ -227,16 +254,33 @@ def evaluate(
     wallet: float,
     candles: pd.DataFrame | None = None,
     max_lag_hours: float = DEFAULT_MAX_LAG_HOURS,
+    ttl_minutes: float | None = None,
 ) -> dict:
     """Baseline vs. filtered comparison report; see the module docstring."""
+    if trades.empty:
+        # Nothing to compare (also covers a frame without any columns).
+        empty = trades.iloc[0:0]
+        return {
+            "baseline": _trade_set_summary(empty, wallet, candles),
+            "filtered": _trade_set_summary(empty, wallet, candles),
+            "skipped_trades": 0,
+            "trades_lost_for_lack_of_timely_assessment": 0,
+            "rejected_trades": 0,
+            "reason_counts": {},
+        }
+
     sorted_trades = trades.sort_values("open_date").reset_index(drop=True)
-    matches = match_trades(sorted_trades, assessments, max_lag_hours=max_lag_hours)
+    matches = match_trades(
+        sorted_trades, assessments, max_lag_hours=max_lag_hours, ttl_minutes=ttl_minutes
+    )
 
     filtered_trades = sorted_trades[matches["included"].to_numpy()]
     reason_counts = matches["reason"].value_counts().to_dict()
     skipped = int((~matches["included"]).sum())
     lost_for_lack_of_assessment = int(
-        reason_counts.get("no_assessment", 0) + reason_counts.get("late_or_missing_availability", 0)
+        reason_counts.get("no_assessment", 0)
+        + reason_counts.get("late_or_missing_availability", 0)
+        + reason_counts.get("expired", 0)
     )
 
     return {
@@ -261,6 +305,12 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         "--wallet", type=float, required=True, help="Fixed notional, e.g. the H1 stake"
     )
     parser.add_argument("--max-lag-hours", type=float, default=DEFAULT_MAX_LAG_HOURS)
+    parser.add_argument(
+        "--ttl-minutes",
+        type=float,
+        default=None,
+        help="Also drop approvals older than this at entry time (live TTL rule; off by default)",
+    )
     parser.add_argument("--candles", help="Optional OHLCV file/datadir for mark-to-market drawdown")
     parser.add_argument("--pair", default="BTC/EUR")
     parser.add_argument("--timeframe", default="4h")
@@ -280,7 +330,12 @@ def run(args: argparse.Namespace) -> None:
         )
 
     report = evaluate(
-        trades, assessments, wallet=args.wallet, candles=candles, max_lag_hours=args.max_lag_hours
+        trades,
+        assessments,
+        wallet=args.wallet,
+        candles=candles,
+        max_lag_hours=args.max_lag_hours,
+        ttl_minutes=args.ttl_minutes,
     )
     report["generated_at"] = datetime.now(UTC).isoformat()
     text = json.dumps(report, indent=2, sort_keys=False)

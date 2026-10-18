@@ -10,9 +10,12 @@
 # Configuration (all via environment, all optional):
 #   SQ_HOME                repo root override (default: two levels above this script)
 #   SQ_BACKUP_ROOT          local backup root (default: $SQ_HOME/user_data/runtime/backups)
-#   SQ_BACKUP_KEEP_LOCAL    local backups to retain (default: 7)
+#   SQ_BACKUP_KEEP_LOCAL    local backups to retain (default: 7); only timestamp-named
+#                           directories under a root holding the .sq-backup-root
+#                           marker (created by this script) are ever pruned
 #   RESTIC_REPOSITORY       if set, also push the bundle to this restic repository
-#                           and prune with --keep-daily 14 --keep-weekly 8
+#                           (tagged sq-backup) and prune only sq-backup-tagged
+#                           snapshots with --keep-daily 14 --keep-weekly 8
 #
 # Snapshots every user_data/runtime/*.sqlite file that exists, whatever its
 # name (e.g. dry-run.sqlite in dry-run mode, live.sqlite per config/live.json
@@ -32,6 +35,11 @@ script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 repo_root=${SQ_HOME:-$(CDPATH='' cd -- "$script_dir/.." && pwd)}
 backup_root=${SQ_BACKUP_ROOT:-"$repo_root/user_data/runtime/backups"}
 keep_local=${SQ_BACKUP_KEEP_LOCAL:-7}
+
+# Local retention only ever touches directories named like the ones this script
+# creates (see $timestamp below), and only under a root carrying this marker.
+ts_glob='[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z'
+marker_name=.sq-backup-root
 
 runtime_dir="$repo_root/user_data/runtime"
 jev_dir="$runtime_dir/jev"
@@ -57,15 +65,20 @@ log() {
 staged_secrets_dir=
 cleanup_staged_secrets() {
     # config/local is copied into the local bundle only long enough for restic
-    # to encrypt it.  An EXIT trap is essential here: `set -e`, a failed
+    # to encrypt it.  The traps below are essential here: `set -e`, a failed
     # restic command, or an interrupt must not leave that plaintext copy under
-    # the retained backup root.
+    # the retained backup root.  dash does not run an EXIT trap when killed by
+    # a signal (systemd stop/timeout sends SIGTERM), hence the signal traps.
     if [ -n "$staged_secrets_dir" ] && [ -d "$staged_secrets_dir" ]; then
         rm -rf "$staged_secrets_dir"
         log "removed staged config/local from the local backup"
     fi
 }
 trap cleanup_staged_secrets 0
+# 128 + signal number, after cleanup: a stopped backup must not look successful.
+trap 'cleanup_staged_secrets; exit 130' INT
+trap 'cleanup_staged_secrets; exit 143' TERM
+trap 'cleanup_staged_secrets; exit 129' HUP
 
 fail() {
     log "ERROR: $1"
@@ -130,6 +143,18 @@ timestamp=$(date -u +%Y%m%dT%H%M%SZ)
 dest="$backup_root/$timestamp"
 mkdir -p "$dest" "$dest/config"
 
+# Claim the backup root for local retention: only when it is new or holds
+# nothing but this script's own timestamp directories. A shared directory with
+# unrelated entries and no marker is never pruned.
+marker="$backup_root/$marker_name"
+if [ ! -e "$marker" ]; then
+    foreign=$(find "$backup_root" -mindepth 1 -maxdepth 1 ! -name "$ts_glob" 2>/dev/null)
+    if [ -z "$foreign" ]; then
+        : >"$marker"
+        log "marked $backup_root as a backup root ($marker_name)"
+    fi
+fi
+
 for name in $db_names; do
     mv "$staging_dir/$name" "$dest/$name"
     # The in-container sqlite3 runs under the image umask (022), not this
@@ -187,35 +212,42 @@ if [ -n "${RESTIC_REPOSITORY:-}" ]; then
         log "included config/local (restic will encrypt this bundle)"
     fi
     log "pushing to restic repository"
-    restic backup "$dest" >/dev/null
+    restic backup --tag sq-backup "$dest" >/dev/null
     # Remove the plaintext staging copy immediately after a successful push;
     # the EXIT trap performs the same cleanup on every failure path.
     cleanup_staged_secrets
     log "pruning restic snapshots (--keep-daily 14 --keep-weekly 8)"
-    restic forget --keep-daily 14 --keep-weekly 8 --prune >/dev/null
+    restic forget --tag sq-backup --group-by host,tags --keep-daily 14 --keep-weekly 8 --prune >/dev/null
 fi
 
 # Defense in depth: strip config/local from every locally retained backup,
 # including any left behind by a prior run of this script before this
 # cleanup existed. Local retention must never hold secrets in cleartext.
-find "$backup_root" -mindepth 3 -maxdepth 3 -type d -path '*/config/local' -print \
+# Only this script's own timestamp directories are looked at.
+find "$backup_root" -mindepth 3 -maxdepth 3 -type d -path "*/$ts_glob/config/local" -print \
     | while IFS= read -r stray; do
-        rm -rf "$stray"
+        rm -rf "${stray:?}"
         log "removed stray secrets directory $stray from local retention"
     done
 
 # Bound local retention regardless of restic: keep the newest $keep_local
-# timestamped directories under $backup_root.
-count=$(find "$backup_root" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
-if [ "$count" -gt "$keep_local" ]; then
-    to_remove=$((count - keep_local))
-    find "$backup_root" -mindepth 1 -maxdepth 1 -type d -print \
-        | sort \
-        | head -n "$to_remove" \
-        | while IFS= read -r old; do
-            log "pruning local backup $old"
-            rm -rf "${old:?}"
-        done
+# timestamped directories under $backup_root. Only directories named like the
+# ones this script creates are candidates, and only if the root carries the
+# marker this script created; everything else in the root is left alone.
+if [ ! -e "$marker" ]; then
+    log "not pruning $backup_root: no $marker_name marker and it holds unrelated entries"
+else
+    count=$(find "$backup_root" -mindepth 1 -maxdepth 1 -type d -name "$ts_glob" | wc -l | tr -d ' ')
+    if [ "$count" -gt "$keep_local" ]; then
+        to_remove=$((count - keep_local))
+        find "$backup_root" -mindepth 1 -maxdepth 1 -type d -name "$ts_glob" -print \
+            | LC_ALL=C sort \
+            | head -n "$to_remove" \
+            | while IFS= read -r old; do
+                log "pruning local backup $old"
+                rm -rf "${old:?}"
+            done
+    fi
 fi
 
 log "done"

@@ -10,6 +10,8 @@ const state = { period: "heldout", cost: "base" };
 let data = null;
 let stats = null;
 let physics = null;
+// Why an optional file is absent, shown instead of a bare "not loaded".
+const notLoaded = { stats: "not loaded", physics: "not loaded" };
 
 const eur = new Intl.NumberFormat("en-GB", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 const minus = (s) => s.replace("-", "−");
@@ -45,6 +47,12 @@ function drawdowns(values) {
     peak = Math.max(peak, v);
     return -((peak - v) / peak) * 100;
   });
+}
+
+// Buy and hold as plotted: daily marks on H1's closes, ending at the recorded
+// benchmark the table shows (its window ends at 00:00 UTC of its end date).
+function plottedHold(run) {
+  return [...run.buy_hold.slice(0, -1), data.notional_eur * (1 + run.buy_hold_net_return_pct / 100)];
 }
 
 function positionSpans(run) {
@@ -346,7 +354,7 @@ function renderAssessment() {
   if (!s) {
     tables.hidden = true;
     status.hidden = false;
-    status.textContent = stats ? "No statistics recorded for this run." : "statistics.json not loaded.";
+    status.textContent = stats ? "No statistics recorded for this run." : `statistics.json ${notLoaded.stats}.`;
     return;
   }
   const text = assessmentText(s);
@@ -545,7 +553,7 @@ function renderPhysics() {
   if (!physics) {
     body.hidden = true;
     status.hidden = false;
-    status.textContent = "physics.json not loaded.";
+    status.textContent = `physics.json ${notLoaded.physics}.`;
     return;
   }
   const t = physicsText(physics, state.period, `${state.period}-${state.cost}`);
@@ -652,24 +660,25 @@ function render() {
   const first = run.dates[0];
   const last = run.dates[run.dates.length - 1];
   document.getElementById("equity-sub").textContent =
-    `${PERIODS[state.period]}, ${first} → ${last}; H1 ${COSTS[state.cost]}, buy and hold 0.5 % per side; daily marks.`;
+    `${PERIODS[state.period]}, ${first} → ${last}; H1 ${COSTS[state.cost]}, buy and hold 0.5 % per side ending at the recorded benchmark; daily marks.`;
   renderStats(run);
   renderTrades(run);
   renderAssessment();
   renderPhysics();
 
+  const hold = plottedHold(run);
   const equity = document.getElementById("equity-chart");
   drawChart(equity, run, {
     series: [
       { key: "strategy", name: "H1", values: run.strategy },
-      { key: "hold", name: "Buy and hold", values: run.buy_hold },
+      { key: "hold", name: "Buy and hold", values: hold },
     ],
     spans: positionSpans(run),
     baseline: 1000,
     tickCount: 5,
     endLabels: true,
     format: (v) => eur.format(v),
-    aria: `Equity chart, ${PERIODS[state.period]} period: H1 ends at ${eur.format(run.strategy.at(-1))}, buy and hold at ${eur.format(run.buy_hold.at(-1))}. Use the arrow keys to read daily values.`,
+    aria: `Equity chart, ${PERIODS[state.period]} period: H1 ends at ${eur.format(run.strategy.at(-1))}, buy and hold at ${eur.format(hold.at(-1))}. Use the arrow keys to read daily values.`,
   });
 
   const limit = heldout && state.cost === "base" ? -K2_FACTOR * run.buy_hold_max_drawdown_pct : undefined;
@@ -680,7 +689,7 @@ function render() {
   drawChart(drawdown, run, {
     series: [
       { key: "strategy", name: "H1", values: drawdowns(run.strategy) },
-      { key: "hold", name: "Buy and hold", values: drawdowns(run.buy_hold) },
+      { key: "hold", name: "Buy and hold", values: drawdowns(hold) },
     ],
     baseline: 0,
     ceil: 0,
@@ -705,8 +714,9 @@ function syncControls() {
 
 function readUrl() {
   const params = new URLSearchParams(location.search);
-  if (params.get("period") in PERIODS) state.period = params.get("period");
-  if (params.get("cost") in COSTS) state.cost = params.get("cost");
+  // Own keys only: `in` also accepts inherited names such as "constructor".
+  if (Object.hasOwn(PERIODS, params.get("period"))) state.period = params.get("period");
+  if (Object.hasOwn(COSTS, params.get("cost"))) state.cost = params.get("cost");
   const theme = params.get("theme");
   if (theme === "dark" || theme === "light") document.documentElement.dataset.theme = theme;
 }
@@ -766,17 +776,36 @@ document.getElementById("stats").classList.add("is-loading");
 const getJson = (url) =>
   fetch(url).then((r) => {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return r.json();
+    return r.json().catch((err) => {
+      throw new Error(`malformed JSON: ${err.message}`);
+    });
+  });
+// An optional file: a missing one (HTTP 404) and a malformed one are told apart.
+const optionalJson = (key, name) =>
+  getJson(`data/${name}`).catch((err) => {
+    if (err.message === "HTTP 404") notLoaded[key] = "not found (HTTP 404)";
+    else if (err.message.startsWith("malformed")) notLoaded[key] = `is ${err.message}`;
+    else notLoaded[key] = `not loaded (${err.message})`;
+    return null; // the rest of the page renders without it
   });
 Promise.all([
   getJson("data/equity-curves.json"),
-  getJson("data/statistics.json").catch(() => null), // the assessment is optional: the rest of the page renders without it
-  getJson("data/physics.json").catch(() => null), // so are the market-structure diagnostics
-])
-  .then(([json, statistics, diagnostics]) => {
+  optionalJson("stats", "statistics.json"), // the assessment is optional
+  optionalJson("physics", "physics.json"), // so are the market-structure diagnostics
+]).then(
+  ([json, statistics, diagnostics]) => {
     data = json;
     stats = statistics;
     physics = diagnostics;
-    render();
-  })
-  .catch((err) => showError(`Could not load data/equity-curves.json (${err.message}).`));
+    try {
+      render();
+    } catch (err) {
+      showError(`Could not render the page (${err.message}).`); // loaded fine: a render bug, not a data problem
+    }
+  },
+  (err) =>
+    showError(
+      `Could not load data/equity-curves.json (${err.message}).` +
+        (location.protocol === "file:" ? " Serve the folder instead of opening the file, e.g. python3 -m http.server --directory build/pages." : ""),
+    ),
+);

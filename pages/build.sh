@@ -20,5 +20,21 @@ if [ -f "$ROOT_DIR/research/experiments/H1/physics.json" ]; then
 else
   echo "notice: research/experiments/H1/physics.json not found; the page will show it as not loaded" >&2
 fi
-PYTHONPATH="$ROOT_DIR/src" python3 -m sq.research.desk --out-dir "$OUT/desk" >/dev/null
+# A malformed copy would only show up in the browser as "not loaded".
+for f in "$OUT"/data/*.json; do
+  if ! python3 -m json.tool "$f" >/dev/null 2>&1; then
+    echo "pages/build.sh: $(basename "$f") is not valid JSON" >&2
+    exit 1
+  fi
+done
+# The desk needs Python 3.11+. Prefer uv's interpreter: macOS's python3 is 3.9.
+if command -v uv >/dev/null 2>&1; then
+  PYTHONPATH="$ROOT_DIR/src" uv run --locked --project "$ROOT_DIR" \
+    python -m sq.research.desk --out-dir "$OUT/desk" >/dev/null
+elif python3 -c 'import sys; sys.exit(sys.version_info < (3, 11))'; then
+  PYTHONPATH="$ROOT_DIR/src" python3 -m sq.research.desk --out-dir "$OUT/desk" >/dev/null
+else
+  echo "pages/build.sh: the desk report needs Python 3.11+ or uv (see README Quick start)" >&2
+  exit 1
+fi
 echo "built $OUT"

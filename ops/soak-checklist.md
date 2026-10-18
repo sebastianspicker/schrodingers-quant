@@ -12,9 +12,14 @@ been run.
 
 - [ ] Host prepared per `ops/README.md` §1
 - [ ] Stack up, `docker compose ps` shows the container healthy/running
-- [ ] `sq-health.timer`, `sq-backup.timer`, `sq-retention.timer` enabled and
-      have fired at least once successfully (`systemctl list-timers`)
-- [ ] Dead-man's-switch (HC_PING_URL) shows green in its own dashboard
+- [ ] `sq-health.timer`, `sq-backup.timer`, `sq-retention.timer` and
+      `sq-forward-report.timer` enabled and have fired at least once
+      successfully (`systemctl list-timers`)
+- [ ] Send `/start` (Telegram, or README §3.3). A bot in the `stopped` state
+      reports `last_process_ts: null`, which `ops/health_ping.py` treats as
+      unhealthy, so the dead-man's-switch pings `/fail` until `/start`
+- [ ] Dead-man's-switch (HC_PING_URL) shows green in its own dashboard (after
+      the `/start` above and the next `sq-health.service` run)
 - [ ] Telegram `/status` responds
 - [ ] Record start time (UTC), Freqtrade image digest, git commit, and the
       config file list in use
@@ -88,13 +93,21 @@ Simulate an outbound network outage without touching SSH (so you don't lock
 yourself out):
 
 ```sh
-# Block outbound to the internet, but keep loopback and the current SSH
-# session's established connection (ct state established,related accept
-# already in the base ruleset keeps existing sessions alive):
-sudo nft insert rule inet filter output oif != lo drop
+# Block new outbound connections, but keep loopback and replies on existing
+# connections. The base ruleset's `ct state established,related accept` is
+# in the input chain only; its output chain accepts everything, so a plain
+# `output oif != lo drop` would also drop the replies on your SSH session and
+# lock you out. Matching only `ct state new` leaves the session alive:
+sudo nft insert rule inet filter output oif != lo ct state new drop
 # ... wait, observe ...
 sudo nft flush ruleset && sudo nft -f /etc/nftables.conf   # restore
 ```
+
+The restore line reloads the base ruleset and so removes the drill rule. If
+you lose the shell, run the restore from the provider's console. Also confirm
+afterwards that `sudo nft list chain inet filter output` shows no `drop`. The
+rule affects host-originated traffic such as the health ping, which opens a new
+connection on each run.
 
 Expect: the dead-man's-switch alerts on silence once its grace period
 elapses (health pings can no longer reach `HC_PING_URL`), even though the bot
@@ -109,8 +122,12 @@ restoring the ruleset and the next successful ping.
 sudo -u sq /opt/schrodingers-quant/ops/backup.sh
 # pick a recent backup dir under user_data/runtime/backups/
 sudo -u sq /opt/schrodingers-quant/ops/restore.sh --local \
-  /opt/schrodingers-quant/user_data/runtime/backups/<timestamp>
+  /opt/schrodingers-quant/user_data/runtime/backups/<timestamp> \
+  --db dry-run.sqlite
 ```
+
+`--db` is required: once the forward report has run, the backup also holds
+`market-data.sqlite`, and restore refuses to guess between databases.
 
 Expect: integrity checks pass (staged copy and post-restore), the previous
 database is moved aside (not deleted), the container restarts, and the bot is

@@ -594,18 +594,18 @@ def null_comparison(
             "fit": _fit_summary(params) if params is not None else None,
         }
         if prefix > 0:
-            results[key]["prefix_outcomes"] = _prefix_outcomes(
+            # The hash precedes the outcomes, as in the tracked physics.json.
+            outcomes = [
                 [
-                    [
-                        row["net_return_pct"],
-                        row["mtm_max_drawdown_pct"],
-                        row["trades"],
-                        row["max_drawdown_locks"],
-                    ]
-                    for row in rows[:prefix]
+                    row["net_return_pct"],
+                    row["mtm_max_drawdown_pct"],
+                    row["trades"],
+                    row["max_drawdown_locks"],
                 ]
-            )
-            results[key]["prefix_sha256"] = _prefix_hash(results[key]["prefix_outcomes"])
+                for row in rows[:prefix]
+            ]
+            results[key]["prefix_sha256"] = _prefix_hash(outcomes)
+            results[key]["prefix_outcomes"] = _prefix_outcomes(outcomes)
     return _round(
         {"observed": observed, "trials": trials, "block_candles": block, "models": results}
     )
@@ -750,8 +750,8 @@ def forward_calibration(
             "fit": _fit_summary(params),
         }
         if prefix > 0:
-            results[key]["prefix_outcomes"] = _prefix_outcomes(outcomes[:prefix])
             results[key]["prefix_sha256"] = _prefix_hash(outcomes[:prefix])
+            results[key]["prefix_outcomes"] = _prefix_outcomes(outcomes[:prefix])
     return _round(
         {
             "protocol": {

@@ -2,11 +2,13 @@
 
 Reads the recorded `mtm-*.json` summaries of an experiment, reloads each
 backtest result they name, and rebuilds the marked-to-market equity with
-`metrics.equity_curve`. Buy-and-hold is marked on the same closes with the
-same fee on entry and exit; its headline figures are the recorded
-`benchmark-*.json` values (base fee, the comparator H1's decision rule uses).
-Both curves are sampled at the last 4h close of each UTC
-day. The script refuses to write if a rebuilt curve does not reproduce the
+`metrics.equity_curve`. Buy-and-hold is marked on the same closes at the
+recorded `benchmark-*.json` fee (base fee, the comparator H1's decision rule
+uses) for base and stress runs alike; its headline figures are the recorded
+benchmark values. The benchmark window ends at 00:00 UTC of its end date, so
+the curve's last mark is not the recorded figure; the demo and the desk show
+the recorded figure for the end. Both curves are sampled at the last 4h close
+of each UTC day. The script refuses to write if a rebuilt curve does not reproduce the
 recorded net return and drawdown, so the demo cannot drift from the record.
 
 Only equity values (in EUR on the fixed notional), trade dates and trade
@@ -32,7 +34,7 @@ def daily(series: pd.Series) -> list[float]:
     return [round(float(v), 2) for v in series.resample("1D").last().dropna()]
 
 
-def build_run(record: dict, benchmark: dict, candles: pd.DataFrame, fee: float) -> dict:
+def build_run(record: dict, benchmark: dict, candles: pd.DataFrame) -> dict:
     trades = load_backtest_data(Path(record["result"]))
     start = pd.Timestamp(record["start"], tz="UTC")
     end = pd.Timestamp(record["end"], tz="UTC")
@@ -52,7 +54,12 @@ def build_run(record: dict, benchmark: dict, candles: pd.DataFrame, fee: float) 
         )
 
     closes = window.set_index("date")["close"]
-    hold = notional * (1 - fee) ** 2 * closes / closes.iloc[0]
+    if float(closes.iloc[0]) != benchmark["start_close"]:
+        raise SystemExit(
+            f"{record['result']}: first close {closes.iloc[0]} differs from the benchmark "
+            f"record's {benchmark['start_close']}"
+        )
+    hold = notional * (1 - benchmark["fee"]) ** 2 * closes / closes.iloc[0]
     days = equity.resample("1D").last().dropna().index
     return {
         "start": record["start"],
@@ -87,7 +94,7 @@ def build_equity_curves(experiment: Path, datadir: Path, out: Path) -> None:
         benchmark = json.loads(benchmark_file.read_text())
         record = json.loads((experiment / f"mtm-{run.name}.json").read_text())
         key = f"{run.period}-{COST_LABELS[run.fee]}"
-        runs[key] = build_run(record, benchmark, candles, run.fee)
+        runs[key] = build_run(record, benchmark, candles)
     payload = {
         "pair": h1.PAIR,
         "timeframe": h1.TIMEFRAME,

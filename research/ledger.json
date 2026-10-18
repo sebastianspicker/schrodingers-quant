@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "as_of": "2026-10-08",
-  "description": "Every evaluation of a strategy rule on recorded data, in order. The deflated Sharpe ratio (physics.json, ledger block) charges H1's held-out Sharpe for the number of counted trials. 'counted' means the run evaluated a rule on price data and could have informed a selection; cost variants of the same trades, benchmarks and predeclared-but-unrun hypotheses are listed but not counted. Sharpe ratios are the annualised daily figures of statistics.json where one exists; the cross-trial Sharpe variance that the expected maximum needs is estimated from the counted entries that have one (three, from different periods, one of them the held-out run itself), which is a weak basis and is disclosed in ADR-0008.",
+  "description": "Every evaluation of a strategy rule on recorded data, in order. The deflated Sharpe ratio (physics.json, ledger block) would charge H1's held-out Sharpe for the number of counted trials, but it is reported as unavailable: some counted trials have no recorded Sharpe ratio and the counted trials use different evaluation periods, so a cross-trial Sharpe variance on a common sample cannot be estimated (the status and reasons are in the ledger block; ADR-0008). 'counted' means the run evaluated a rule on price data and could have informed a selection; cost variants of the same trades, benchmarks and predeclared-but-unrun hypotheses are listed but not counted. Sharpe ratios are the annualised daily figures of statistics.json where one exists.",
   "entries": [
     {
       "id": "H1-train-base",

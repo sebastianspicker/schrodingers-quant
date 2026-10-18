@@ -1,10 +1,13 @@
 """Validated closed candles and an incremental, transactional SQLite archive.
 
 One daily public-data request is sufficient at 4h. No service, credentials or
-new dependencies. Existing closed candles are immutable: a provider revision
-requires investigation rather than silently rewriting forward evidence.
+new dependencies. Archived closed candles are immutable: a provider revision
+requires investigation rather than silently rewriting forward evidence. A
+candle is archived only once it closed at least one interval ago, so a quick
+post-close revision of the latest bar is not mistaken for one.
 """
 
+import contextlib
 import hashlib
 import sqlite3
 from pathlib import Path
@@ -12,10 +15,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from sq.live import SafeMessageError
+
 COLUMNS = ["date", "open", "high", "low", "close", "volume"]
 
 
-class CandleError(ValueError):
+class CandleError(SafeMessageError):
     """Safe, actionable messages containing no config or account information."""
 
 
@@ -59,14 +64,27 @@ def require_fresh(candles: pd.DataFrame, step: pd.Timedelta, now: pd.Timestamp) 
 
 
 def archive_update(
-    path: Path, incoming: pd.DataFrame, pair: str, timeframe: str, step: pd.Timedelta
+    path: Path,
+    incoming: pd.DataFrame,
+    pair: str,
+    timeframe: str,
+    step: pd.Timedelta,
+    *,
+    now: pd.Timestamp | None = None,
 ) -> pd.DataFrame:
     """Merge closed candles atomically, preserving history outside API retention.
 
     A transaction serializes writers and rolls back gaps or revisions. The
     database is separate from Freqtrade and keyed by exchange/pair/timeframe.
+    Only candles closed at least one further interval before `now` (default:
+    the current time) are archived and checked for revisions: an exchange can
+    still revise a bar shortly after its close, and archiving it at once would
+    make that revision a permanent "changed" error. Newer candles are returned
+    for the report but not stored; a later run archives them.
     """
     validate(incoming, step)
+    now = pd.Timestamp.now(tz="UTC") if now is None else now
+    settled = incoming[incoming["date"] + 2 * step <= now]
     path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(path, timeout=10)
     try:
@@ -85,7 +103,7 @@ def archive_update(
         old = pd.DataFrame(rows, columns=COLUMNS)
         old["date"] = pd.to_datetime(old["date"], unit="ms", utc=True)
         if not old.empty:
-            overlap = old.merge(incoming, on="date", suffixes=("_old", "_new"))
+            overlap = old.merge(settled, on="date", suffixes=("_old", "_new"))
             for column in COLUMNS[1:]:
                 if not np.allclose(
                     overlap[column + "_old"], overlap[column + "_new"], rtol=1e-10, atol=1e-12
@@ -110,11 +128,23 @@ def archive_update(
                     row.close,
                     row.volume,
                 )
-                for row in incoming.itertuples()
+                for row in settled.itertuples()
             ],
         )
         connection.commit()
         return merged
+    except sqlite3.DatabaseError as exc:
+        with contextlib.suppress(sqlite3.Error):
+            connection.rollback()
+        if "locked" in str(exc):
+            raise CandleError(
+                "candle archive is locked; rerun when no other forward report is running"
+            ) from exc
+        raise CandleError(
+            "candle archive is not a readable SQLite database or has an unexpected candles "
+            "table; move it aside, then restore it from backup or rebuild it with "
+            "--candles <complete history> --archive <path>"
+        ) from exc
     except Exception:
         connection.rollback()
         raise

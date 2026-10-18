@@ -1,6 +1,8 @@
 """`python -m sq.research <subcommand>`: reproducible commands for the H1
-hypothesis (research/hypotheses/H1.md), run inside the pinned Freqtrade image
-via the `research` Compose service (`make research ARGS=<subcommand>`). The
+hypothesis (research/hypotheses/H1.md). The backtest subcommands run inside the
+pinned Freqtrade image via the `research` Compose service (`make research
+ARGS=<subcommand>`); stats and physics run without it, and jev-evaluate needs
+Freqtrade only to read a backtest export. The
 experiment definition is h1.py; the steps are in pipeline.py.
 
 Subcommands:
@@ -108,9 +110,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     physics_parser.add_argument("--experiment", type=Path, default=default_experiment_dir())
     physics_parser.add_argument("--out", type=Path, help="Output path (default: physics.json)")
-    physics_parser.add_argument("--null-trials", type=int, default=None)
-    physics_parser.add_argument("--calibration-trials", type=int, default=None)
-    physics_parser.add_argument("--first-passage-trials", type=int, default=None)
+    physics_parser.add_argument("--null-trials", type=trial_count, default=None)
+    physics_parser.add_argument("--calibration-trials", type=trial_count, default=None)
+    physics_parser.add_argument("--first-passage-trials", type=trial_count, default=None)
 
     jev_parser = subparsers.add_parser(
         "jev-evaluate", help="Offline baseline-vs-filter comparison of Jev's recorded assessments"
@@ -120,6 +122,43 @@ def build_arg_parser() -> argparse.ArgumentParser:
     jev_evaluation.add_arguments(jev_parser)
 
     return parser
+
+
+def trial_count(text: str) -> int:
+    """A Monte Carlo trial count: an integer of at least the recorded prefix,
+    checked before a run of several minutes rather than after it."""
+    from sq.research.physics import PREFIX_TRIALS
+
+    try:
+        value = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected an integer, got {text!r}") from None
+    if value < PREFIX_TRIALS:
+        raise argparse.ArgumentTypeError(
+            f"must be at least {PREFIX_TRIALS} (the recorded per-trial prefix), got {value}"
+        )
+    return value
+
+
+def write_offline(args: argparse.Namespace) -> None:
+    """The subcommands that run without the image: stats and physics."""
+    if args.subcommand == "stats":
+        from sq.research import statistics
+
+        statistics.write_statistics(args.experiment, args.out)
+        return
+    from sq.research import physics
+
+    overrides = {
+        key: value
+        for key, value in (
+            ("null_trials", args.null_trials),
+            ("calibration_trials", args.calibration_trials),
+            ("first_passage_trials", args.first_passage_trials),
+        )
+        if value is not None
+    }
+    physics.write_physics(args.experiment, args.out, **overrides)
 
 
 def default_experiment_dir() -> Path:
@@ -137,27 +176,25 @@ def main(argv: list[str] | None = None) -> int:
     if args.subcommand is None:
         parser.print_usage()
         return 2
-    if args.subcommand == "stats":
-        from sq.research import statistics
-
-        statistics.write_statistics(args.experiment, args.out)
-        return 0
-    if args.subcommand == "physics":
-        from sq.research import physics
-
-        overrides = {
-            key: value
-            for key, value in (
-                ("null_trials", args.null_trials),
-                ("calibration_trials", args.calibration_trials),
-                ("first_passage_trials", args.first_passage_trials),
-            )
-            if value is not None
-        }
-        physics.write_physics(args.experiment, args.out, **overrides)
+    if args.subcommand in ("stats", "physics"):
+        if args.out is not None and not args.out.parent.is_dir():
+            parser.error(f"{args.subcommand}: --out directory {args.out.parent} does not exist")
+        # Bad or missing records are a one-line message and exit 2, as in the desk.
+        try:
+            write_offline(args)
+        except KeyError as exc:
+            parser.error(f"{args.subcommand}: missing key {exc} in the experiment's records")
+        except (OSError, ValueError, TypeError) as exc:
+            parser.error(f"{args.subcommand}: {exc}")
         return 0
 
-    from sq.research import jev_evaluation, pipeline
+    if args.subcommand == "jev-evaluate":
+        from sq.research import jev_evaluation
+
+        jev_evaluation.run(args)
+        return 0
+
+    from sq.research import pipeline
 
     if args.subcommand == "manifest":
         pipeline.manifest()
@@ -185,8 +222,6 @@ def main(argv: list[str] | None = None) -> int:
         pipeline.benchmark(args.period, args.pair)
     elif args.subcommand == "equity-curves":
         pipeline.equity_curves()
-    elif args.subcommand == "jev-evaluate":
-        jev_evaluation.run(args)
     return 0
 
 

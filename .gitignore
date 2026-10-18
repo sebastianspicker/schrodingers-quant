@@ -78,6 +78,9 @@ user_data/*
 !user_data/runtime/
 user_data/runtime/*
 !user_data/runtime/.gitkeep
+!user_data/runtime/jev/
+user_data/runtime/jev/*
+!user_data/runtime/jev/.gitkeep
 !user_data/data/
 user_data/data/*
 !user_data/data/.gitkeep

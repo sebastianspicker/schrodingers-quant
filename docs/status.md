@@ -48,7 +48,7 @@
 | Operations | Health ping to a dead-man's switch; backup of every trade database and the Jev records (plaintext secret staging is removed even when restic fails); restore of a named database that leaves the bot stopped; image pruning; hardened systemd units, including a daily forward report timer (04:15 UTC, after the backup); [Debian 13 runbook](../ops/README.md); soak checklist |
 | Live tooling | Read-only public preflight plus an account-required live-pilot target; bounded account-wide reconciliation that fails on incomplete history; a read-only forward report (`sq.live.forward`, `make forward-report`) that checks the [forward test](forward-test.md) criteria; credential-free `config/live.json`; secrets validation for deployable overlays |
 | Jev | Candidate recording, credential-free worker with a bounded main-loop deadline and null provider, fail-closed filter, leakage-safe evaluation harness; no real provider ([Jev](jev.md)) |
-| Checks | `make ci`: unit tests (`make test`, no Docker), lint, format, shellcheck, Compose variants and three config validations; the same in GitHub Actions |
+| Checks | `make ci`: unit tests (`make test`, no Docker), lint, format, shellcheck, Compose variants and four config validations; the same in GitHub Actions |
 | Demo | [GitHub Pages](https://sebastianspicker.github.io/schrodingers-quant/), built from `pages/` and the recorded H1 equity curves (`make research ARGS=equity-curves`, which refuses to write if a curve disagrees with the record) |
 
 ## Physics-informed assessment (2026-10-08)

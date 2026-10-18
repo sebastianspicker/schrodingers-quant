@@ -8,7 +8,7 @@ OnFailure=sq-alert@%n.service
 Type=oneshot
 User=sq
 WorkingDirectory=/opt/schrodingers-quant
-# Optional: SQ_FORWARD_ARGS (e.g. --since <window start> --candles <file>),
+# Optional: SQ_FORWARD_ARGS (e.g. --since <window start> --initial-capital <EUR>),
 # see ops/README.md §4. The leading "-" makes a missing file non-fatal.
 EnvironmentFile=-/etc/schrodingers-quant/ops.env
 ExecStart=/opt/schrodingers-quant/ops/forward_report.sh $SQ_FORWARD_ARGS

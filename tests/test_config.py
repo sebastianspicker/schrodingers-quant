@@ -69,6 +69,7 @@ def merged(**api) -> dict:
         "username": "user",
         "password": "hunter2-password",
         "jwt_secret_key": GOOD_JWT,
+        "ws_token": "ws-token-value",
         **api,
     }
     return {"api_server": api_server, "telegram": {"enabled": False}}

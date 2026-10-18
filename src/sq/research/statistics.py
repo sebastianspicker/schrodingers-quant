@@ -690,9 +690,11 @@ def build_statistics(
 def write_statistics(experiment: Path, out: Path | None = None, **kwargs) -> Path:
     curves_path = experiment / "equity-curves.json"
     raw = curves_path.read_bytes()
-    statistics = build_statistics(
-        json.loads(raw), source_sha256=hashlib.sha256(raw).hexdigest(), **kwargs
-    )
+    try:
+        curves = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{curves_path}: not valid JSON ({exc})") from exc
+    statistics = build_statistics(curves, source_sha256=hashlib.sha256(raw).hexdigest(), **kwargs)
     target = out or (experiment / "statistics.json")
     target.write_text(json.dumps(statistics, indent=1, sort_keys=False, allow_nan=False) + "\n")
     print(f"wrote {target}")

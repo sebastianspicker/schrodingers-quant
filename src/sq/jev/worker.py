@@ -16,18 +16,24 @@ exactly one assessments.jsonl record: candidate_id, input (the exact
 candidate payload sent), input_timestamp, model, model_version,
 prompt_version, decision, rationale, confidence, requested_at, available_at,
 latency_ms, error. Any exception or timeout raised by the provider is caught
-here and recorded as an "abstain" with the error's class name; it never
-crashes the worker loop.
+here and recorded as an "abstain" with the error's class name; provider output
+that cannot be written as JSON, or whose decision is not one of
+`protocol.DECISIONS`, is recorded as an "abstain" too. A candidate
+line that is not a JSON object is logged and skipped (the cursor moves past
+it), and an unexpected failure in one polling pass is logged and the loop
+continues; the worker loop itself does not die on bad input. (It still exits
+at startup if its directory is unusable, see `main`.)
 
 A bounded batch size (`--queue-maxsize`) caps how many unseen candidates are
 read and processed in one pass, so a large backlog cannot be pulled into
 memory at once; leftover candidates are picked up on the next pass (the
 cursor only advances past what this pass actually consumed).
 
-Single instance: a lock file (`--lock`, default `<dir>/worker.lock`) is
-created exclusively for the run and removed on exit; a concurrent second
-instance refuses to start rather than racing the cursor or the assessments
-file.
+Single instance: a lock file (`<dir>/worker.lock`) is held with an exclusive
+`flock` for the run; a concurrent second instance refuses to start rather than
+racing the cursor or the assessments file. The file itself is never deleted
+(the kernel drops the lock when the process ends), so its presence does not
+mean a worker is running.
 
 Prompt text is versioned in `prompts/v1.txt`; `prompt_version` is derived
 from its content (`sha256:<hex prefix>`), so a changed prompt is visible in
@@ -50,6 +56,7 @@ from threading import Lock, Thread
 from sq.jev.protocol import (
     ASSESSMENTS_FILENAME,
     CANDIDATES_FILENAME,
+    DECISIONS,
     DEFAULT_DIR,
     append_jsonl,
     read_jsonl,
@@ -86,6 +93,26 @@ def load_prompt(path: Path) -> tuple[str, str]:
     return text, f"sha256:{digest[:16]}"
 
 
+# --- startup ---------------------------------------------------------------
+
+
+class WorkerStartupError(RuntimeError):
+    """The worker cannot start; the message says why and is shown without a traceback."""
+
+
+def ensure_writable_dir(path: Path) -> None:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise WorkerStartupError(f"Jev worker: cannot create {path}: {exc.strerror}") from None
+    if not os.access(path, os.W_OK | os.X_OK):
+        raise WorkerStartupError(
+            f"Jev worker: {path} is not writable by uid {os.getuid()}; "
+            "fix the directory's ownership on the host (it must be writable by the "
+            "container user) and restart"
+        )
+
+
 # --- single-instance lock -----------------------------------------------
 
 
@@ -98,12 +125,17 @@ def single_instance_lock(path: Path):
     lock file left behind by a crash or `docker kill` never blocks a restart.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+    except OSError as exc:
+        raise WorkerStartupError(
+            f"Jev worker: cannot open lock file {path}: {exc.strerror}"
+        ) from None
     try:
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            raise RuntimeError(
+            raise WorkerStartupError(
                 f"Jev worker: {path} is locked by another running instance"
             ) from None
         os.ftruncate(fd, 0)
@@ -146,6 +178,19 @@ def read_new_candidates(
     if not candidates_path.exists():
         return [], offset
 
+    size = candidates_path.stat().st_size
+    if offset > size:
+        # The file is shorter than the cursor: it was truncated or replaced by
+        # hand. Rescan from the start; assessments.jsonl still prevents any
+        # candidate that already has a record from being queried again.
+        logger.warning(
+            "Jev worker: cursor %d is beyond the end of %s (%d bytes); resetting to 0",
+            offset,
+            candidates_path,
+            size,
+        )
+        offset = 0
+
     candidates: list[dict] = []
     with open(candidates_path, "rb") as fh:
         fh.seek(offset)
@@ -162,11 +207,18 @@ def read_new_candidates(
             if not text:
                 continue
             try:
-                candidates.append(json.loads(text))
+                parsed = json.loads(text)
             except json.JSONDecodeError:
                 logger.warning(
                     "Jev worker: skipping malformed candidate line in %s", candidates_path
                 )
+                continue
+            if not isinstance(parsed, dict):
+                logger.warning(
+                    "Jev worker: skipping non-object candidate line in %s", candidates_path
+                )
+                continue
+            candidates.append(parsed)
     return candidates, cursor
 
 
@@ -255,6 +307,13 @@ def build_assessment_record(
         confidence = assessment.confidence
         model = assessment.model
         model_version = assessment.model_version
+        if decision not in DECISIONS:
+            # Clamp, and say why: only a known decision may ever reach the file.
+            error = error or "InvalidDecision"
+            rationale = (
+                f"provider returned unknown decision {str(decision)[:60]!r}; clamped to abstain"
+            )
+            decision = "abstain"
 
     return {
         "candidate_id": candidate.get("candidate_id"),
@@ -276,6 +335,14 @@ def build_assessment_record(
 # --- one pass --------------------------------------------------------
 
 
+def _is_json_serialisable(record: dict) -> bool:
+    try:
+        json.dumps(record, allow_nan=False)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
 def process_once(
     *,
     candidates_path: Path,
@@ -291,7 +358,7 @@ def process_once(
     already_assessed = {
         record.get("candidate_id")
         for record in read_jsonl(assessments_path)
-        if record.get("candidate_id")
+        if isinstance(record, dict) and record.get("candidate_id")
     }
 
     offset = read_cursor(cursor_path)
@@ -300,7 +367,11 @@ def process_once(
     processed = 0
     for candidate in candidates:
         candidate_id = candidate.get("candidate_id")
-        if not candidate_id or candidate_id in already_assessed:
+        if (
+            not isinstance(candidate_id, str)
+            or not candidate_id
+            or candidate_id in already_assessed
+        ):
             # Already has a record (or is malformed enough to lack an id):
             # never re-query, never fabricate an id.
             continue
@@ -308,6 +379,16 @@ def process_once(
         requested_at = datetime.now(UTC)
         assessment, error = assess_with_timeout(provider, candidate, prompt, timeout_seconds)
         record = build_assessment_record(candidate, prompt_version, requested_at, assessment, error)
+        if not _is_json_serialisable(record):
+            # The provider is untrusted: a field that cannot be written as
+            # JSON must not crash the worker or leave the candidate unanswered.
+            logger.warning(
+                "Jev worker: provider output for %s is not JSON-serialisable; recording abstain",
+                candidate_id,
+            )
+            record = build_assessment_record(
+                candidate, prompt_version, requested_at, None, "UnserialisableAssessment"
+            )
         append_jsonl(assessments_path, record)
         already_assessed.add(candidate_id)
         processed += 1
@@ -329,18 +410,29 @@ def run_forever(
     poll_interval_seconds: float,
 ) -> None:
     while True:
-        processed = process_once(
-            candidates_path=candidates_path,
-            assessments_path=assessments_path,
-            cursor_path=cursor_path,
-            provider=provider,
-            prompt=prompt,
-            prompt_version=prompt_version,
-            timeout_seconds=timeout_seconds,
-            queue_maxsize=queue_maxsize,
-        )
-        if processed:
-            logger.info("Jev worker: processed %d new candidate(s)", processed)
+        try:
+            processed = process_once(
+                candidates_path=candidates_path,
+                assessments_path=assessments_path,
+                cursor_path=cursor_path,
+                provider=provider,
+                prompt=prompt,
+                prompt_version=prompt_version,
+                timeout_seconds=timeout_seconds,
+                queue_maxsize=queue_maxsize,
+            )
+        except OSError as exc:
+            # Typically an unwritable or full directory: one clear line, not a traceback.
+            logger.error(
+                "Jev worker: pass failed (%s); retrying in %.0fs", exc, poll_interval_seconds
+            )
+        except Exception:
+            # One bad pass must not end the process: under `restart:
+            # unless-stopped` that would crash-loop on the same input.
+            logger.exception("Jev worker: pass failed; retrying in %.0fs", poll_interval_seconds)
+        else:
+            if processed:
+                logger.info("Jev worker: processed %d new candidate(s)", processed)
         time.sleep(poll_interval_seconds)
 
 
@@ -370,28 +462,33 @@ def main() -> int:
     args = build_arg_parser().parse_args()
 
     jev_dir: Path = args.dir
-    jev_dir.mkdir(parents=True, exist_ok=True)
     lock_path = jev_dir / LOCK_FILENAME
 
     prompt_text, prompt_version = load_prompt(args.prompt)
     provider = build_provider(args.provider)
 
-    with single_instance_lock(lock_path):
-        kwargs = dict(
-            candidates_path=jev_dir / CANDIDATES_FILENAME,
-            assessments_path=jev_dir / ASSESSMENTS_FILENAME,
-            cursor_path=jev_dir / CURSOR_FILENAME,
-            provider=provider,
-            prompt=prompt_text,
-            prompt_version=prompt_version,
-            timeout_seconds=args.timeout_seconds,
-            queue_maxsize=args.queue_maxsize,
-        )
-        if args.once:
-            processed = process_once(**kwargs)
-            logger.info("Jev worker: processed %d new candidate(s)", processed)
-        else:
-            run_forever(poll_interval_seconds=args.poll_interval_seconds, **kwargs)
+    try:
+        ensure_writable_dir(jev_dir)
+        with single_instance_lock(lock_path):
+            kwargs = dict(
+                candidates_path=jev_dir / CANDIDATES_FILENAME,
+                assessments_path=jev_dir / ASSESSMENTS_FILENAME,
+                cursor_path=jev_dir / CURSOR_FILENAME,
+                provider=provider,
+                prompt=prompt_text,
+                prompt_version=prompt_version,
+                timeout_seconds=args.timeout_seconds,
+                queue_maxsize=args.queue_maxsize,
+            )
+            if args.once:
+                processed = process_once(**kwargs)
+                logger.info("Jev worker: processed %d new candidate(s)", processed)
+            else:
+                run_forever(poll_interval_seconds=args.poll_interval_seconds, **kwargs)
+    except WorkerStartupError as exc:
+        # Raised only before the loop starts (unusable directory, lock held).
+        logger.error("%s", exc)
+        return 1
     return 0
 
 
