@@ -51,16 +51,17 @@ container_runtime_dir="/freqtrade/user_data/runtime"
 container_staging_dir="$container_runtime_dir/.restore-staging"
 restic_target="$runtime_dir/.restore-staging-restic"
 
+lock_dir="$runtime_dir/.restore.lock"
+
 cleanup_staging() {
     # Both staging dirs can hold plaintext config/secrets from a restic
     # restore; remove them on every exit path, signals included (dash does not
-    # run an EXIT trap when a signal kills the script).
+    # run an EXIT trap when a signal kills the script). Installed only once
+    # this run holds $lock_dir, so a second invocation never removes the
+    # staging of a restore that is still running.
     rm -rf "${staging_dir:?}" "${restic_target:?}"
+    rmdir "$lock_dir" 2>/dev/null || :
 }
-trap cleanup_staging 0
-trap 'cleanup_staging; exit 130' INT
-trap 'cleanup_staging; exit 143' TERM
-trap 'cleanup_staging; exit 129' HUP
 
 dc() {
     # cd, not --project-directory: Compose resolves compose.yaml, .env and
@@ -194,12 +195,27 @@ done
     usage
     exit 1
 }
-# The name becomes a path under user_data/runtime: a bare *.sqlite file name only.
-case "$db_name" in
-    "" | [!./]*.sqlite) ;;
-    *) fail "--db must be a database file name such as live.sqlite, got: $db_name" ;;
-esac
-case "$db_name" in */*) fail "--db must not contain a path separator: $db_name" ;; esac
+# The name becomes a path under user_data/runtime (and a find -name pattern):
+# a bare *.sqlite file name only, without path separators or glob characters.
+check_db_name() {
+    case "$2" in
+        [!./]*.sqlite) ;;
+        *) fail "$1 must be a database file name such as live.sqlite, got: $2" ;;
+    esac
+    case "$2" in */* | *[*?[]*) fail "$1 must be a plain file name: $2" ;; esac
+}
+[ -z "$db_name" ] || check_db_name --db "$db_name"
+
+# One restore at a time (mkdir is atomic; flock is not on macOS for the local
+# rehearsal). A lock left by a killed run (SIGKILL skips the traps) must be
+# removed by hand once no restore is running.
+mkdir -p "$runtime_dir"
+mkdir "$lock_dir" 2>/dev/null \
+    || fail "another restore is running, or a killed one left $lock_dir: remove it once none is"
+trap cleanup_staging 0
+trap 'trap - 0; cleanup_staging; exit 130' INT
+trap 'trap - 0; cleanup_staging; exit 143' TERM
+trap 'trap - 0; cleanup_staging; exit 129' HUP
 
 rm -rf "$staging_dir"
 mkdir -p "$staging_dir"
@@ -211,6 +227,7 @@ case "$mode" in
         elif [ -f "$source_arg" ]; then
             resolved_path="$source_arg"
             target_name=${db_name:-$(basename "$source_arg")}
+            check_db_name "the restored file name (pass --db)" "$target_name"
         else
             fail "$source_arg is neither a backup directory nor a file"
         fi

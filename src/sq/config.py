@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import re
 import sys
 from pathlib import Path
@@ -20,6 +21,9 @@ TRACKED_CONFIG_DIR = Path(__file__).resolve().parents[2] / "config"
 TRACKED_BASE_CONFIG = TRACKED_CONFIG_DIR / "base.json"
 TRACKED_LIVE_CONFIG = TRACKED_CONFIG_DIR / "live.json"
 TRACKED_EXAMPLES_DIR = TRACKED_CONFIG_DIR / "examples"
+# The tracked config directory and its read-only mount inside the containers.
+CONTAINER_CONFIG_DIR = Path("/freqtrade/config")
+TRACKED_CONFIG_DIRS = (TRACKED_CONFIG_DIR, CONTAINER_CONFIG_DIR)
 
 PLACEHOLDER_JWT_SECRET_KEY = "REPLACE_WITH_RANDOM_32_CHARS_KEY"
 MIN_JWT_SECRET_KEY_LENGTH = 32
@@ -38,6 +42,21 @@ CREDENTIAL_FIELDS = (
     ("api_server", "password"),
     ("api_server", "jwt_secret_key"),
     ("api_server", "ws_token"),
+)
+# Freqtrade passes these exchange sub-objects straight to ccxt, which also
+# accepts credentials there; tracked files must not set them either.
+CCXT_CONFIG_BLOCKS = ("ccxt_config", "ccxt_async_config", "ccxt_sync_config")
+# ccxt's requiredCredentials names (walletAddress identifies the account, like chat_id).
+CCXT_CREDENTIAL_FIELDS = (
+    "apiKey",
+    "secret",
+    "password",
+    "uid",
+    "login",
+    "privateKey",
+    "walletAddress",
+    "token",
+    "twofa",
 )
 PLACEHOLDER_PREFIXES = ("REPLACE_", "REPLACE-", "CHANGE_ME", "CHANGE-ME", "CHANGEME")
 
@@ -127,6 +146,16 @@ def check_tracked_credentials(config: dict, name: str) -> None:
             raise ValueError(
                 f"{name}: tracked config must not contain credentials ({section}.{field} is set)."
             )
+    exchange = _section(config, "exchange", name)
+    for block in CCXT_CONFIG_BLOCKS:
+        ccxt_config = _section(exchange, block, f"{name}: exchange")
+        for field in CCXT_CREDENTIAL_FIELDS:
+            value = ccxt_config.get(field)
+            if not is_blank(value) and not is_placeholder(value):
+                raise ValueError(
+                    f"{name}: tracked config must not contain credentials "
+                    f"(exchange.{block}.{field} is set)."
+                )
 
 
 def check_layer_invariants(config: dict, name: str, *, live: bool) -> None:
@@ -168,15 +197,18 @@ def check_allow_placeholders_scope(paths: list[Path | str]) -> None:
 def layer_kind(path: Path | str) -> str:
     """Classify a --config path: "base", "live", "example" (all tracked) or "local".
 
-    Matched on the trailing path components, so the container paths
-    (/freqtrade/config/...) and repo-relative paths classify the same way.
+    A layer is tracked only if it lives in the tracked config directory: the
+    repository's `config/` or its container mount `/freqtrade/config`. Any
+    other location is "local", even if its trailing components look like a
+    tracked file (e.g. `config/local/config/live.json`).
     """
-    parts = Path(path).parts
-    if parts[-2:] == ("config", "base.json"):
-        return "base"
-    if parts[-2:] == ("config", "live.json"):
-        return "live"
-    if len(parts) >= 3 and parts[-3:-1] == ("config", "examples"):
+    resolved = Path(path).resolve()
+    if resolved.parent in TRACKED_CONFIG_DIRS:
+        if resolved.name == "base.json":
+            return "base"
+        if resolved.name == "live.json":
+            return "live"
+    if resolved.parent.name == "examples" and resolved.parent.parent in TRACKED_CONFIG_DIRS:
         return "example"
     return "local"
 
@@ -293,20 +325,68 @@ def main() -> int:
         ),
     )
     args = parser.parse_args()
+    _quiet_freqtrade_schema_log()
     try:
         validate(args.configs or [], allow_placeholders=args.allow_placeholders)
     except (ValueError, OSError, *_freqtrade_errors()) as exc:
         # One line, no traceback. Only the first line of the message: Freqtrade
         # appends config excerpts on later lines.
         message = str(exc).strip().splitlines()
-        if hasattr(exc, "validator") and hasattr(exc, "absolute_path"):
-            # A jsonschema error's message quotes the offending value, which can
-            # be a credential: name the field and the failed rule only.
-            field = ".".join(str(part) for part in exc.absolute_path) or "(top level)"
-            message = [f"config schema check failed at {field} ({exc.validator})"]
+        schema_message = _schema_error_message(exc)
+        if schema_message is not None:
+            message = [schema_message]
         print(f"sq.config: {message[0] if message else type(exc).__name__}", file=sys.stderr)
         return 1
     return 0
+
+
+FREQTRADE_SCHEMA_MODULE = "freqtrade.configuration.config_validation"
+
+
+class _DropSchemaReason(logging.Filter):
+    """Drop Freqtrade's "Invalid configuration. Reason: ..." log: it quotes the value."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not str(record.msg).startswith("Invalid configuration")
+
+
+def _quiet_freqtrade_schema_log() -> None:
+    logger = logging.getLogger(FREQTRADE_SCHEMA_MODULE)
+    if not any(isinstance(f, _DropSchemaReason) for f in logger.filters):
+        logger.addFilter(_DropSchemaReason())
+
+
+def _schema_error_message(exc: BaseException) -> str | None:
+    """A value-free message for a config schema failure, or None if `exc` is not one.
+
+    A jsonschema error's message quotes the offending value, which can be a
+    credential. Freqtrade re-raises it as a ConfigurationError carrying that
+    message, while handling the original ValidationError: look through the
+    exception chain for the field path and failed rule, and fall back to a
+    generic line when the error was raised inside Freqtrade's
+    `validate_config_schema`.
+    """
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        validator = getattr(current, "validator", None)
+        if isinstance(validator, str) and hasattr(current, "absolute_path"):
+            field = ".".join(str(part) for part in current.absolute_path) or "(top level)"
+            return f"config schema check failed at {field} ({validator})"
+        current = current.__cause__ or current.__context__
+    # Only validate_config_schema quotes values; the consistency helpers in the
+    # same module raise constant, actionable messages, which are kept.
+    tb = exc.__traceback__
+    while tb is not None:
+        frame = tb.tb_frame
+        if (
+            frame.f_globals.get("__name__") == FREQTRADE_SCHEMA_MODULE
+            and frame.f_code.co_name == "validate_config_schema"
+        ):
+            return "config schema check failed (value not shown; check field types)"
+        tb = tb.tb_next
+    return None
 
 
 def _freqtrade_errors() -> tuple[type[BaseException], ...]:

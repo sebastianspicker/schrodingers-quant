@@ -133,7 +133,7 @@ def run(root: Path, args: list[str]) -> int:
             return 1
         name = f"forward-{datetime.now(UTC):%Y-%m-%dT%H%M%S%fZ}.json"
         report_path = directory / name
-        child_stderr = None
+        child_stderr = child_stdout = None
         try:
             result = subprocess.run(
                 [
@@ -157,6 +157,9 @@ def run(root: Path, args: list[str]) -> int:
                 check=False,
             )
             child_stderr = getattr(result, "stderr", None)
+            # On success the child's stdout is the report itself, not an error.
+            if result.returncode not in (0, 4):
+                child_stdout = getattr(result, "stdout", None)
             if result.returncode not in (0, 4) or not report_path.exists():
                 raise RuntimeError("report process failed")
             report = json.loads(report_path.read_text())
@@ -180,10 +183,17 @@ def run(root: Path, args: list[str]) -> int:
             mark_error(directory, exc)
             if isinstance(exc, subprocess.TimeoutExpired):
                 child_stderr = exc.stderr
-            tail = stderr_tail(child_stderr)
-            if tail:
-                print(f"child stderr (last {STDERR_TAIL_LINES} lines, scrubbed):", file=sys.stderr)
-                print(tail, file=sys.stderr)
+                child_stdout = exc.stdout
+            # The forward CLI prints its deliberate errors as JSON on stdout;
+            # tracebacks and Docker errors go to stderr. Show both tails.
+            for stream, text in (("stdout", child_stdout), ("stderr", child_stderr)):
+                tail = stderr_tail(text)
+                if tail:
+                    print(
+                        f"child {stream} (last {STDERR_TAIL_LINES} lines, scrubbed):",
+                        file=sys.stderr,
+                    )
+                    print(tail, file=sys.stderr)
             print(
                 f"forward report failed ({type(exc).__name__}); latest marked ERROR",
                 file=sys.stderr,

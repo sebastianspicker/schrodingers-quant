@@ -208,7 +208,9 @@ def read_new_candidates(
                 continue
             try:
                 parsed = json.loads(text)
-            except json.JSONDecodeError:
+            # JSONDecodeError, UnicodeDecodeError on invalid UTF-8, RecursionError on
+            # pathological nesting: skip the line rather than stall the cursor on it.
+            except (ValueError, RecursionError):
                 logger.warning(
                     "Jev worker: skipping malformed candidate line in %s", candidates_path
                 )
@@ -337,8 +339,9 @@ def build_assessment_record(
 
 def _is_json_serialisable(record: dict) -> bool:
     try:
-        json.dumps(record, allow_nan=False)
-    except (TypeError, ValueError):
+        # The same dumps arguments as protocol.append_jsonl (sort_keys), plus no NaN.
+        json.dumps(record, sort_keys=True, allow_nan=False)
+    except (TypeError, ValueError, RecursionError):
         return False
     return True
 

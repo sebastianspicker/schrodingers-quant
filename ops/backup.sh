@@ -111,6 +111,13 @@ snapshot_db() {
     log "integrity_check ok for $name"
 }
 
+# Checked before anything is written: 0 or a negative count would make local
+# retention prune every backup, including the one this run is about to write.
+case $keep_local in
+    '' | *[!0-9]*) fail "SQ_BACKUP_KEEP_LOCAL must be a positive integer, got '$keep_local'" ;;
+esac
+[ "$keep_local" -ge 1 ] || fail "SQ_BACKUP_KEEP_LOCAL must be a positive integer, got '$keep_local'"
+
 rm -rf "$staging_dir"
 mkdir -p "$staging_dir"
 
@@ -137,6 +144,14 @@ IFS='
 '
 for name in $db_names; do
     snapshot_db "$name"
+done
+# The container writes the staged snapshots; never promote (or chmod through)
+# a symlink planted in their place. Checked before $dest exists, so a refused
+# run leaves no partial timestamp directory for retention to count.
+for name in $db_names; do
+    if [ -L "$staging_dir/$name" ] || [ ! -f "$staging_dir/$name" ]; then
+        fail "staged snapshot $staging_dir/$name is not a regular file"
+    fi
 done
 
 timestamp=$(date -u +%Y%m%dT%H%M%SZ)
@@ -194,8 +209,10 @@ fi
 if [ -d "$runtime_dir/reports" ]; then
     mkdir -p "$dest/reports"
     for report in "$runtime_dir"/reports/*.json; do
-        [ -f "$report" ] || continue
-        cp "$report" "$dest/reports/"
+        # The reports directory is writable from the containers: skip symlinks
+        # so a planted link cannot pull a host file into the backup.
+        [ -f "$report" ] && [ ! -L "$report" ] || continue
+        cp -P "$report" "$dest/reports/"
         chmod 600 "$dest/reports/$(basename "$report")"
     done
 fi
@@ -223,12 +240,15 @@ fi
 # Defense in depth: strip config/local from every locally retained backup,
 # including any left behind by a prior run of this script before this
 # cleanup existed. Local retention must never hold secrets in cleartext.
-# Only this script's own timestamp directories are looked at.
-find "$backup_root" -mindepth 3 -maxdepth 3 -type d -path "*/$ts_glob/config/local" -print \
-    | while IFS= read -r stray; do
-        rm -rf "${stray:?}"
-        log "removed stray secrets directory $stray from local retention"
-    done
+# Only this script's own timestamp directories are looked at, and only under a
+# root carrying the marker (the same ownership rule as pruning below).
+if [ -e "$marker" ]; then
+    find "$backup_root" -mindepth 3 -maxdepth 3 -type d -path "*/$ts_glob/config/local" -print \
+        | while IFS= read -r stray; do
+            rm -rf "${stray:?}"
+            log "removed stray secrets directory $stray from local retention"
+        done
+fi
 
 # Bound local retention regardless of restic: keep the newest $keep_local
 # timestamped directories under $backup_root. Only directories named like the
