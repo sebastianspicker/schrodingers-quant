@@ -149,7 +149,11 @@ probability of trade profit. A provider exception or timeout is recorded as
 most one late call per provider remains in flight; a real provider must also
 set its own network timeout so that discarded call releases its resources. The
 worker does not die on bad input: a candidate line that is not a JSON object
-is logged and skipped, provider output that cannot be written as JSON becomes an
+is logged and skipped. Providers must return an `Assessment` with string
+rationale, model and model version, and numeric or absent confidence (booleans
+are not confidence values). Malformed fields become an `abstain` with
+`error: "InvalidAssessment"`; confidence has no assumed probability range.
+Provider output that cannot be written as finite JSON becomes an
 `abstain` with `error: "UnserialisableAssessment"`, and an unexpected failure in
 one polling pass is logged and retried on the next one. It never silently drops
 a candidate that has an id.

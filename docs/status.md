@@ -1,6 +1,7 @@
 # Status
 
-**As of 2026-10-08.** For how the system is built, see
+**Documentation reviewed 2026-11-01.** Dated verification records below identify
+when each result was obtained. For how the system is built, see
 [architecture](architecture.md). The H1 research decision is recorded in
 [ADR-0005](adr/0005-h1-go-after-sizing-correction.md).
 
@@ -48,7 +49,7 @@
 | Operations | Health ping to a dead-man's switch; backup of every trade database and the Jev records (plaintext secret staging is removed even when restic fails); restore of a named database that leaves the bot stopped; image pruning; hardened systemd units, including a daily forward report timer (04:15 UTC, after the backup); [Debian 13 runbook](../ops/README.md); soak checklist |
 | Live tooling | Read-only public preflight plus an account-required live-pilot target; bounded account-wide reconciliation that fails on incomplete history; a read-only forward report (`sq.live.forward`, `make forward-report`) that checks the [forward test](forward-test.md) criteria; credential-free `config/live.json`; secrets validation for deployable overlays |
 | Jev | Candidate recording, credential-free worker with a bounded main-loop deadline and null provider, fail-closed filter, leakage-safe evaluation harness; no real provider ([Jev](jev.md)) |
-| Checks | `make ci`: unit tests (`make test`, no Docker), lint, format, shellcheck, Compose variants and four config validations; the same in GitHub Actions |
+| Checks | `make ci`: unit tests (`make test`, no Docker), lint, format, shellcheck, Compose variants and pinned-image config/integration validation; GitHub Actions runs these on Dependabot PRs or manual dispatch |
 | Demo | [GitHub Pages](https://sebastianspicker.github.io/schrodingers-quant/), built from `pages/` and the recorded H1 equity curves (`make research ARGS=equity-curves`, which refuses to write if a curve disagrees with the record) |
 
 ## Physics-informed assessment (2026-10-08)
@@ -75,11 +76,18 @@ The historical H1 strategy, fills and 4h decision record remain unchanged.
 `statistics.json` corrects constant-exposure fee handling. New tests exercise
 malformed/gapped/revised market data, archive rollback, actual fill timestamps,
 as-of cutoffs, first-candle losses, evidence eligibility, report failure and
-incident persistence. Codex completed the requested follow-up review without
-Claude consultation; the maintainer authorized local integration. A real VPS
-soak remains pending.
+incident persistence. A real VPS soak remains pending.
 
 ## Verified
+
+- **Local maintenance (2026-11-01).** `make ci` passes: unit tests, Ruff,
+  shellcheck, Compose variants, base/live/VPS configuration loads and the
+  pinned-image strategy, ORM, forward-report and Jev contracts. The worker
+  now rejects malformed provider metadata independently of Python's JSON
+  recursion behavior; valid decisions and existing error diagnostics remain
+  covered. The static demo builds locally. CI runs automatically for Dependabot
+  PRs or by manual dispatch; Pages publication is manual on `main`. These
+  checks do not establish model quality, exchange execution or VPS readiness.
 
 - **Workbench v2 (2026-10-08).** Expanded local unit suite, Ruff, shellcheck,
   Compose variants and base/live/VPS configuration loads pass. OrbStack was

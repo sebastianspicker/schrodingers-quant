@@ -2,9 +2,9 @@
 
 Status: tooling built, **live trading not authorized**. This is the runbook for
 the live pilot (open work in [status](status.md)) once the maintainer
-explicitly authorizes it. Nothing in this repository places, cancels or edits
-an order: `sq.live.preflight` and `sq.live.reconcile` are read-only, and
-`config/live.json` starts `stopped`.
+explicitly authorizes it. The project tools `sq.live.preflight` and
+`sq.live.reconcile` are read-only. Freqtrade would execute the orders after
+explicit activation; `config/live.json` starts `stopped`.
 
 ## In short
 
@@ -14,15 +14,16 @@ an order: `sq.live.preflight` and `sq.live.reconcile` are read-only, and
 - **Order of work.** Meet every prerequisite, layer the live config, run the
   four drills once each, reconcile at least daily, and record everything.
   Stop on any of the stop conditions.
-- **Worst case per trade, as measured so far.** With a −20 % stop and an
+- **Modeled loss if filled at the stop price.** With a −20 % stop and an
   assumed 0.40 % fee on both sides, public market data on 2026-09-24 put the
-  worst-case loss at about €1.65 for an €8 stake and €2.06 for a €10 stake.
+  modeled loss at about €1.65 for an €8 stake and €2.06 for a €10 stake.
   That check used no account, so it does not confirm the real fee tier,
-  balance or order handling ([Preflight evidence](#7-preflight-evidence)).
+  balance or order handling. Gaps, slippage or unfilled orders can make the
+  actual loss greater ([Preflight evidence](#7-preflight-evidence)).
 - **Scaling.** Continuing or enlarging the pilot is a written decision (an
   ADR), never automatic.
 
-## 1. Prerequisites, before any credential exists
+## 1. Prerequisites, before live trading
 
 - Explicit authorization from the maintainer to fund and run a live pilot.
 - An isolated Kraken account or subaccount, funded with roughly €10–15. The

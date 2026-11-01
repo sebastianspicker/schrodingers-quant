@@ -5,8 +5,30 @@
 [![CI](https://github.com/sebastianspicker/schrodingers-quant/actions/workflows/ci.yml/badge.svg)](https://github.com/sebastianspicker/schrodingers-quant/actions/workflows/ci.yml)
 [![Demo](https://img.shields.io/badge/demo-GitHub%20Pages-1f4e9c)](https://sebastianspicker.github.io/schrodingers-quant/)
 
-The bot is both trading and not trading until you look at the config. Out of
-the box, it is **not trading**.
+Schrödingers Quant is a cryptocurrency trading research project built around
+Freqtrade: one recorded strategy, an offline analysis desk and tools for forward
+paper trading on Kraken. The bot is both trading and not trading until you
+look at the config. Out of the box, it is **not trading**.
+
+<details>
+<summary>Status and limitations</summary>
+
+**Exploratory trading research software.** Developed independently alongside
+my main professional work, Schrödingers Quant is a work in progress for
+testing trading strategies and exploring Jev as an optional model filter.
+The tracked setup starts stopped in dry-run mode; Jev currently has only a
+placeholder provider and has not been evaluated with a real model. This is
+a research starting point to inspect and adapt, not a ready-to-use trading
+product.
+
+**Disclaimer.** The code, backtests and any model outputs are for research
+and education, not financial, investment or legal advice or consulting.
+Simulated results do not establish a trading edge or predict future returns.
+You are responsible for validating changes, checking applicable obligations,
+configuring any deployment and decisions involving funds. Live trading can
+lose money; use at your own risk.
+
+</details>
 
 ## In short
 
@@ -31,10 +53,19 @@ the box, it is **not trading**.
 - **Where it stands.** Dry-run only. Nothing has been deployed, funded or
   traded live ([status](docs/status.md)).
 
-> [!WARNING]
-> This is an experiment, not investment advice. The strategy passed its
-> predeclared test only by a narrow margin, on simulated fills. Reliable
-> operation and positive returns are separate goals, and neither is promised.
+The research and trading paths are separate. The shipped configuration uses
+simulated orders; live execution requires an explicit operator decision.
+
+```mermaid
+flowchart LR
+    Record[Recorded market data] --> Research[Backtest and analysis desk]
+    Research --> Report[Results and limitations]
+    Market[Current market data] --> Strategy[H1 strategy in Freqtrade]
+    Strategy --> Paper[Simulated orders by default]
+    Paper --> Forward[Forward test report]
+    Report --> Review[Operator reviews the evidence]
+    Forward --> Review
+```
 
 ## For a quant trader
 
@@ -125,7 +156,8 @@ The page also works on a phone and follows your system's dark mode.
   on BTC/EUR 4h candles: it enters on a break of the 20-day high, exits on a
   break of the 10-day low, and has a −20 % catastrophe stop plus Freqtrade's
   protections. It was [predeclared](research/hypotheses/H1.md), checked for
-  lookahead bias, and evaluated once on held-out data. The result is GO, but
+  lookahead bias, and evaluated on held-out data, including the disclosed sizing correction.
+  The result is GO, but
   only just, and the [experiment record](research/experiments/H1/record.md)
   explains why that is weak evidence.
 - **Statistics with uncertainty.** Bootstrap intervals for the mean trade, a
@@ -181,8 +213,8 @@ make logs      # expect a log line naming the state STOPPED
 make down
 ```
 
-`make ci` runs the tracked unit tests, which need no Docker; `make test` alone
-needs only uv. `make help` lists every target. Passing checks show that the Compose files,
+`make ci` includes the unit suite plus Docker-based config and integration
+checks. `make test` alone needs only uv. `make help` lists every target. Passing checks show that the Compose files,
 configuration and strategy load. They don't show exchange connectivity, real
 fills or profitability.
 
@@ -249,7 +281,7 @@ Never paste API keys, account exports or trade databases into an issue.
 | Dry-run | Freqtrade's simulation mode: the bot runs its strategy on live market data but sends no orders. |
 | `stopped` state | The bot process runs but opens no trades until an operator sends `/start`. |
 | Live overlay | `config/live.json`, the config layer that switches off dry-run. It is only applied explicitly. |
-| Held-out period | Data (2024-07-01 → 2026-09-20) kept aside and run once, after the strategy was frozen. |
+| Held-out period | Data (2024-07-01 → 2026-09-20) reserved for evaluation after freezing the strategy; now spent, including the disclosed sizing-correction rerun. |
 | Marked to market | Valuing an open position at the current price on every close, not only when it is sold. |
 | Drawdown | The fall from the highest equity reached so far to a later low, as a percentage. |
 | Catastrophe stop | H1's fixed −20 % stop from the entry price, a last-resort exit rather than the normal one. |

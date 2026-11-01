@@ -1,15 +1,6 @@
 name: Pages
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/pages.yml"
-      - "pages/**"
-      - "src/sq/research/desk.py"
-      - "research/experiments/H1/equity-curves.json"
-      - "research/experiments/H1/statistics.json"
-      - "research/experiments/H1/physics.json"
   workflow_dispatch:
 
 permissions:
@@ -21,6 +12,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -48,6 +40,7 @@ jobs:
           if-no-files-found: error
 
   deploy:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
       pages: write

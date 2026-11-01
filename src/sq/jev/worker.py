@@ -17,7 +17,7 @@ candidate payload sent), input_timestamp, model, model_version,
 prompt_version, decision, rationale, confidence, requested_at, available_at,
 latency_ms, error. Any exception or timeout raised by the provider is caught
 here and recorded as an "abstain" with the error's class name; provider output
-that cannot be written as JSON, or whose decision is not one of
+that violates the Assessment field types, cannot be written as JSON, or whose decision is not one of
 `protocol.DECISIONS`, is recorded as an "abstain" too. A candidate
 line that is not a JSON object is logged and skipped (the cursor moves past
 it), and an unexpected failure in one polling pass is logged and the loop
@@ -298,9 +298,29 @@ def build_assessment_record(
     available_at = datetime.now(UTC)
     latency_ms = (available_at - requested_at).total_seconds() * 1000
 
+    # Dataclass annotations do not validate provider responses. Check the
+    # primitive contract before serialization: JSON can encode invalid fields
+    # such as list-valued rationales (including deep lists on newer Python).
+    if assessment is not None and (
+        not isinstance(assessment, Assessment)
+        or not all(
+            isinstance(value, str)
+            for value in (assessment.rationale, assessment.model, assessment.model_version)
+        )
+        or (
+            assessment.confidence is not None
+            and (
+                not isinstance(assessment.confidence, (int, float))
+                or isinstance(assessment.confidence, bool)
+            )
+        )
+    ):
+        assessment, error = None, "InvalidAssessment"
+
     if assessment is None:
         # Provider raised or timed out: record an abstain with the error,
         # never silently drop the candidate.
+        error = error or "InvalidAssessment"
         decision, rationale, confidence = "abstain", f"provider error: {error}", None
         model, model_version = "unknown", "unknown"
     else:

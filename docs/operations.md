@@ -8,7 +8,9 @@ machine. For a server, use the runbooks:
 
 ## In short
 
-- Every check and tool runs through `make`, inside the pinned Freqtrade image.
+- `make` provides the command entry points. Config and integration checks use
+  the pinned Freqtrade image; unit tests, statistics and the analysis desk run
+  locally through uv. Host operations run as shell or Python scripts.
 - `make up` starts the bot in dry-run, and it stays `stopped` until you send
   `/start`.
 - Secrets live only in ignored files under `config/local/` and in an ignored
@@ -41,7 +43,7 @@ machine. For a server, use the runbooks:
 | `make pull` | Pulls the Compose images for the `tools` and `jev` profiles (`--ignore-buildable`); needs Docker |
 | `make format` | Formats the code in place (`ruff format .`); `make check` only verifies it |
 | `make up`, `make down`, `make logs`, `make status` | Local container lifecycle |
-| `make research ARGS=equity-curves`, then `sh pages/build.sh` | Rebuild the demo's data from the recorded backtests and assemble the site in `build/pages/` (published by `.github/workflows/pages.yml`) |
+| `make research ARGS=equity-curves`, then `sh pages/build.sh` | Rebuild the demo's data from the recorded backtests and assemble the site in `build/pages/` (published only by manually running `.github/workflows/pages.yml` on `main`) |
 
 `make up` starts only the bot, whose state is `stopped` until `/start`. Every
 other in-image command runs as `docker compose run --rm <tools|research> …`

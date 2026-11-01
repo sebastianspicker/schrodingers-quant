@@ -49,6 +49,15 @@ PRD.md
 *DESIGN_BRIEF.md
 rewrite_report.md
 
+# Local review records and task state; scientific research records remain tracked.
+/THINGS_TO_DO_LEDGER.md
+/ALPHA_AUDIT_LEDGER.md
+/ALPHA_AUDIT_REPORT.md
+/ALPHA_IMPLEMENTATION_LEDGER.md
+/ALPHA_PR_DESCRIPTION.md
+/ALPHA_KNOWN_ISSUES.md
+tests/test_private_*.py
+
 # OS and editor files
 .DS_Store
 .idea/
@@ -90,3 +99,4 @@ user_data/backtest_results/*
 
 # Built GitHub Pages demo (pages/build.sh)
 build/
+/CODEX.md

@@ -45,3 +45,13 @@ Describe what changed and why, list the checks you ran with their result, and
 link an issue or experiment record for anything that changes trading behavior.
 Keep pull requests focused; a refactor and a behavior change are easier to
 review separately.
+
+The full CI workflow runs automatically for Dependabot-authored pull requests
+and can be started manually for other changes. Dependency security review runs
+on all pull requests; GitHub's configured CodeQL security scans remain separate.
+These checks do not deploy the application or place orders. The Pages demo is
+published only by manually starting the Pages workflow on `main`.
+
+Keep agent instructions, task ledgers, audit reports and local reproduction
+scripts out of commits. The tracked tests and research records are part of the
+reproducible experiment and CI; they are not private task artifacts.
