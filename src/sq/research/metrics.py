@@ -5,6 +5,7 @@ against a fixed notional). No I/O here; callers (pipeline.py, jev_evaluation.py)
 own reading trades/candles and writing the result.
 """
 
+import numpy as np
 import pandas as pd
 
 # --- mark-to-market equity ------------------------------------------------
@@ -34,12 +35,17 @@ def equity_curve(trades: pd.DataFrame, candles: pd.DataFrame, wallet: float) -> 
     return equity
 
 
-def max_drawdown_pct(series: pd.Series, initial: float | None = None) -> float:
+def max_drawdown_pct(
+    values: pd.Series | np.ndarray | list[float], initial: float | None = None
+) -> float:
     """Peak-to-trough percentage drawdown of an equity or price series."""
-    peak = series.cummax()
+    v = np.asarray(values, dtype=float)
+    if v.size == 0:
+        return float("nan")  # as the earlier pandas version
+    peak = np.fmax.accumulate(v)  # like pandas cummax: NaN marks do not reset the peak
     if initial is not None:
-        peak = peak.clip(lower=initial)
-    return float(((peak - series) / peak).max() * 100)
+        peak = np.maximum(peak, initial)
+    return float(np.nanmax((peak - v) / peak) * 100)
 
 
 def mtm_report(

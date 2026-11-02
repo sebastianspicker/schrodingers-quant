@@ -296,13 +296,20 @@ def evaluate(
 # --- CLI (subcommand of `python -m sq.research`, see __main__.py) --------
 
 
+def _positive_float(text: str) -> float:
+    value = float(text)
+    if not value > 0:
+        raise argparse.ArgumentTypeError(f"must be positive, got {text}")
+    return value
+
+
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--trades", required=True, help="Backtest trades export (.zip or directory)"
     )
     parser.add_argument("--assessments", required=True, help="Path to assessments.jsonl")
     parser.add_argument(
-        "--wallet", type=float, required=True, help="Fixed notional, e.g. the H1 stake"
+        "--wallet", type=_positive_float, required=True, help="Fixed notional, e.g. the H1 stake"
     )
     parser.add_argument("--max-lag-hours", type=float, default=DEFAULT_MAX_LAG_HOURS)
     parser.add_argument(
@@ -311,7 +318,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="Also drop approvals older than this at entry time (live TTL rule; off by default)",
     )
-    parser.add_argument("--candles", help="Optional OHLCV file/datadir for mark-to-market drawdown")
+    parser.add_argument("--candles", help="Optional Freqtrade datadir for mark-to-market drawdown")
     parser.add_argument("--pair", default="BTC/EUR")
     parser.add_argument("--timeframe", default="4h")
     parser.add_argument("--out")

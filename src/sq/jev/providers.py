@@ -1,13 +1,12 @@
-"""Jev assessment providers: a `Provider` protocol plus two implementations.
+"""Jev assessment providers: a `Provider` protocol and `NullProvider`.
 
 Providers never receive exchange credentials and never place or influence an
 order directly; `sq.jev.worker` is the only caller, and it writes provider
-output to `assessments.jsonl` for `H1JevShadow` (or a human) to read later. A
-model API key, when one exists, comes from an environment variable only (e.g.
-`JEV_API_KEY`), never from Freqtrade config.
+output to `assessments.jsonl` for `H1JevShadow` (or a human) to read later. No
+real model provider exists yet (docs/jev.md, "What is blocked"); its API key
+must come from the worker's environment, never from Freqtrade config.
 """
 
-import os
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -18,7 +17,6 @@ __all__ = [
     "Assessment",
     "Provider",
     "NullProvider",
-    "JevProvider",
     "build_provider",
 ]
 
@@ -70,43 +68,8 @@ class NullProvider:
         )
 
 
-class JevProvider:
-    """Stub for a real Jev API integration. Not implemented.
-
-    This repository has no Jev API access or documentation, so this class
-    intentionally does not perform any network call, and `assess()` always
-    raises `NotImplementedError`. A real implementation needs, at minimum:
-
-      - an endpoint URL and an authentication scheme (the key would come from
-        an environment variable only, e.g. `JEV_API_KEY`, never from
-        Freqtrade config or a committed file);
-      - the request schema for a candidate + prompt pair (field names, types,
-        encoding);
-      - the response schema mapping to decision/rationale/confidence/model
-        metadata, including how "abstain" is distinguished from an error;
-      - pricing and rate limits, to size the worker's timeout, bounded queue
-        and any retry/backoff policy (this stub adds none).
-
-    Until that information exists, do not add HTTP calls or invent field
-    names here.
-    """
-
-    def __init__(self, *, api_key: str | None = None, **_unused_kwargs):
-        self.api_key = api_key if api_key is not None else os.environ.get("JEV_API_KEY")
-
-    def assess(self, candidate: dict, prompt: str) -> Assessment:
-        raise NotImplementedError(
-            "JevProvider is an unimplemented stub: no Jev API endpoint, auth scheme, "
-            "request/response schema, pricing or rate limits are known. Needs: endpoint "
-            "URL, an env-var-only auth scheme, request schema, response schema, pricing, "
-            "rate limits. See this class's docstring."
-        )
-
-
 def build_provider(name: str) -> Provider:
     """Construct a provider by name, for CLI/config wiring."""
     if name == "null":
         return NullProvider()
-    if name == "jev":
-        return JevProvider()
-    raise ValueError(f"Unknown Jev provider {name!r}; expected 'null' or 'jev'")
+    raise ValueError(f"Unknown Jev provider {name!r}; expected 'null'")

@@ -14,7 +14,7 @@ from copy import deepcopy
 import pytest
 from conftest import REPO_ROOT
 
-from sq.research import ledger, nulls, physics, proxy_data
+from sq.research import ledger, nulls, physics, provenance, proxy_data
 
 H1 = REPO_ROOT / "research" / "experiments" / "H1"
 PHYSICS = H1 / "physics.json"
@@ -73,7 +73,7 @@ def inputs() -> dict:
         "curves": json.loads(raw),
         "curves_sha256": hashlib.sha256(raw).hexdigest(),
         "candles": proxy_data.load_candles(),
-        "candles_sha256": proxy_data.sha256(),
+        "candles_sha256": provenance.sha256_file(proxy_data.DEFAULT_PATH),
         "ledger": ledger.load_ledger(physics.DEFAULT_LEDGER),
     }
 

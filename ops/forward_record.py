@@ -49,6 +49,10 @@ def publish(directory: Path, report: dict, status: int) -> int:
     verdict = report["criteria"]["verdict"]
     if (verdict, status) not in (("CONTINUE", 0), ("STOP", 4)):
         raise ValueError("report verdict and process exit disagree")
+    # Latch before the window checks below: a contract error must not lose a STOP.
+    latch = directory / "forward-stop.json"
+    if verdict == "STOP" and not latch.exists():
+        atomic_write(latch, report)
     manifest = directory / "forward-window.json"
     unbound = report["fidelity"]["window_start_source"] == "none (no trades yet)"
     if manifest.exists() and unbound:
@@ -61,9 +65,6 @@ def publish(directory: Path, report: dict, status: int) -> int:
             )
         if not manifest.exists():
             atomic_write(manifest, expected)
-    latch = directory / "forward-stop.json"
-    if verdict == "STOP" and not latch.exists():
-        atomic_write(latch, report)
     atomic_write(directory / "forward-latest.json", report)
     return 4 if latch.exists() else status
 

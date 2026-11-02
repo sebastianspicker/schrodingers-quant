@@ -25,12 +25,15 @@ import json
 import math
 from datetime import date
 from pathlib import Path
+from statistics import NormalDist
 
 import numpy as np
 
+from sq.research.statistics import ANNUALISATION_DAYS, _round
+
+_NORMAL = NormalDist()
 SCHEMA_VERSION = 1
 KINDS = frozenset({"hypothesis", "sensitivity", "robustness", "rerun", "cost_variant", "benchmark"})
-ANNUALISATION_DAYS = 365
 EULER_GAMMA = 0.5772156649015329
 
 NOTE = (
@@ -39,35 +42,6 @@ NOTE = (
     "trial count; skewness and kurtosis adjustment does not correct serial dependence. "
     "Unavailable inputs leave the selection adjustment unestimated, not zero."
 )
-
-
-def _round(value: float | None, digits: int = 4) -> float | None:
-    if value is None or math.isnan(value):
-        return None
-    return round(float(value), digits)
-
-
-# --- normal distribution ----------------------------------------------------------
-
-
-def norm_cdf(x: float) -> float:
-    return 0.5 * (1 + math.erf(x / math.sqrt(2)))
-
-
-def norm_ppf(p: float) -> float:
-    """Inverse standard normal CDF by bisection on `math.erf` (error below 1e-10)."""
-    if not 0 < p < 1:
-        raise ValueError("p must be strictly between 0 and 1")
-    if p < 0.5:
-        return -norm_ppf(1 - p)
-    low, high = 0.0, 40.0
-    for _ in range(100):
-        mid = (low + high) / 2
-        if norm_cdf(mid) < p:
-            low = mid
-        else:
-            high = mid
-    return (low + high) / 2
 
 
 # --- the formulas ------------------------------------------------------------------
@@ -86,7 +60,8 @@ def expected_max_sharpe(n_trials: int, sharpe_variance: float) -> float:
         return 0.0
     g = EULER_GAMMA
     return math.sqrt(sharpe_variance) * (
-        (1 - g) * norm_ppf(1 - 1 / n_trials) + g * norm_ppf(1 - 1 / (n_trials * math.e))
+        (1 - g) * _NORMAL.inv_cdf(1 - 1 / n_trials)
+        + g * _NORMAL.inv_cdf(1 - 1 / (n_trials * math.e))
     )
 
 
@@ -106,7 +81,7 @@ def deflated_sharpe(
     variance = 1 - skewness * sharpe + (kurtosis - 1) / 4 * sharpe**2
     if variance <= 0:
         raise ValueError("Sharpe variance estimate is not positive for these moments")
-    return norm_cdf((sharpe - benchmark_sharpe) * math.sqrt(n_obs - 1) / math.sqrt(variance))
+    return _NORMAL.cdf((sharpe - benchmark_sharpe) * math.sqrt(n_obs - 1) / math.sqrt(variance))
 
 
 # --- ledger file -------------------------------------------------------------------

@@ -166,7 +166,7 @@ def test_exposure_pct_empty_period_raises():
         st.exposure_pct([], ts("2025-01-01"), ts("2025-01-01"))
 
 
-def test_holding_days_rounds_up_with_minimum_one():
+def test_holding_days_rounds_to_nearest_with_minimum_one():
     trades = [
         trade("2025-01-01 00:00", "2025-01-01 04:00", 0.0),
         trade("2025-01-01 00:00", "2025-01-03 00:00", 0.0),

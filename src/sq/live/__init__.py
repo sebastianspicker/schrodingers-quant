@@ -8,6 +8,7 @@ import argparse
 import sqlite3
 import sys
 from pathlib import Path
+from urllib.parse import quote
 
 
 class CliArgumentParser(argparse.ArgumentParser):
@@ -60,3 +61,20 @@ def trade_db_error(exc: sqlite3.Error, db_path: str) -> SafeMessageError:
         "trade database is not a SQLite database or is incompatible with the pinned "
         "Freqtrade schema"
     )
+
+
+def db_path_from_url(db_url: str) -> str:
+    """Filesystem path of a `sqlite:///...` db_url (the readers support SQLite only)."""
+    prefix = "sqlite:///"
+    if not db_url.startswith(prefix):
+        # Never echo the URL: a non-sqlite db_url can carry a password.
+        raise SafeMessageError("Only sqlite db_url values are supported")
+    if len(db_url) == len(prefix):
+        raise SafeMessageError("db_url has no path")
+    return db_url[len(prefix) :]
+
+
+def read_only_uri(db_path: str) -> str:
+    """sqlite URI that opens `db_path` read-only. The path is percent-encoded
+    so that `?`, `#` or `%` in a file name cannot swallow `mode=ro`."""
+    return f"file:{quote(db_path)}?mode=ro"

@@ -11,12 +11,12 @@ import numpy as np
 import pandas as pd
 
 from sq.research import h1, metrics
+from sq.research.h1 import CANDLES_PER_YEAR
 
 SIGMA_TARGET = 0.40
 VOL_WINDOW = 120
 STAKE_FLOOR = 0.25
 STAKE_CAP = 1.0
-CANDLES_PER_YEAR = 6 * 365
 
 RECORD_DIR = Path("/freqtrade/research/experiments/H2")
 STRATEGY_PATH = Path("/freqtrade/research/strategies")

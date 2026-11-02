@@ -467,7 +467,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--dir", type=Path, default=DEFAULT_DIR, help="Shared candidates/assessments directory"
     )
-    parser.add_argument("--provider", default="null", choices=["null", "jev"])
+    parser.add_argument("--provider", default="null", choices=["null"])
     parser.add_argument("--prompt", type=Path, default=DEFAULT_PROMPT_PATH)
     parser.add_argument("--timeout-seconds", type=float, default=DEFAULT_TIMEOUT_SECONDS)
     parser.add_argument("--queue-maxsize", type=int, default=DEFAULT_QUEUE_MAXSIZE)

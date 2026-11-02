@@ -13,8 +13,8 @@ Mode is read from the merged config's `"jev"` key (verified to survive
 Freqtrade's config schema: `freqtrade.config_schema.config_schema.CONF_SCHEMA`
 has no top-level `additionalProperties: false`, so an unrecognised top-level
 key such as `jev` passes `validate_config_schema` unchanged and is available
-via `self.config`) with an environment-variable fallback if a future
-Freqtrade version starts rejecting it:
+via `self.config`; `tests/check_freqtrade_contract.py` checks this against the
+pinned image):
 
     {"jev": {"mode": "off" | "shadow" | "filter",
               "assessment_ttl_minutes": 60,
@@ -25,8 +25,7 @@ exactly "off", "shadow" or "filter") makes the strategy refuse to load, so the
 bot does not start: an operator who meant "filter" must never silently get
 "off". The effective mode is logged once at startup. If an unrecognized mode
 still reaches `confirm_trade_entry` it blocks new entries (fail closed); exits
-are unaffected. `mode` also falls back to `SQ_JEV_MODE`, `dir` to `SQ_JEV_DIR`, and
-`assessment_ttl_minutes` to `SQ_JEV_TTL_MINUTES` if the config key is absent.
+are unaffected.
 
 Modes:
   - "off" (default): behaves exactly like `H1ChannelBreakout`. Returns True
@@ -108,7 +107,6 @@ import hashlib
 import inspect
 import json
 import logging
-import os
 import types
 from datetime import UTC, datetime, timedelta
 from functools import cache
@@ -286,15 +284,13 @@ class H1JevShadow(H1ChannelBreakout):
         if "jev" in self.config:
             if not isinstance(raw, dict):
                 raise ValueError(f"Jev: the 'jev' config must be an object, got {raw!r}")
-            if "mode" not in raw and "SQ_JEV_MODE" not in os.environ:
+            if "mode" not in raw:
                 raise ValueError(f"Jev: the 'jev' config has no 'mode' (one of {MODES})")
-        mode = self._jev_config().get("mode", os.environ.get("SQ_JEV_MODE", DEFAULT_MODE))
+        mode = self._jev_config().get("mode", DEFAULT_MODE)
         if mode not in MODES:
             raise ValueError(f"Jev: unknown mode {mode!r}; expected one of {MODES}")
-        directory = self._jev_config().get("dir", os.environ.get("SQ_JEV_DIR", DEFAULT_DIR))
-        ttl = self._jev_config().get(
-            "assessment_ttl_minutes", os.environ.get("SQ_JEV_TTL_MINUTES", DEFAULT_TTL_MINUTES)
-        )
+        directory = self._jev_config().get("dir", DEFAULT_DIR)
+        ttl = self._jev_config().get("assessment_ttl_minutes", DEFAULT_TTL_MINUTES)
         if not isinstance(directory, str) or not directory:
             raise ValueError(f"Jev: 'dir' must be a non-empty string, got {directory!r}")
         try:
@@ -311,23 +307,16 @@ class H1JevShadow(H1ChannelBreakout):
         configured = self.config.get("jev")
         return configured if isinstance(configured, dict) else {}
 
+    # The same lookups and defaults as `_jev_validate_config`, which already
+    # refused a missing or malformed value at startup.
     def _jev_mode(self) -> str:
-        mode = self._jev_config().get("mode")
-        if mode is None:
-            mode = os.environ.get("SQ_JEV_MODE", DEFAULT_MODE)
-        return str(mode)
+        return str(self._jev_config().get("mode", DEFAULT_MODE))
 
     def _jev_dir(self) -> Path:
-        directory = self._jev_config().get("dir")
-        if directory is None:
-            directory = os.environ.get("SQ_JEV_DIR", DEFAULT_DIR)
-        return Path(directory)
+        return Path(self._jev_config().get("dir", DEFAULT_DIR))
 
     def _jev_ttl_minutes(self) -> float:
-        ttl = self._jev_config().get("assessment_ttl_minutes")
-        if ttl is None:
-            ttl = os.environ.get("SQ_JEV_TTL_MINUTES", DEFAULT_TTL_MINUTES)
-        return float(ttl)
+        return float(self._jev_config().get("assessment_ttl_minutes", DEFAULT_TTL_MINUTES))
 
     def _jev_build_candidate(self, pair: str, rate: float, current_time: datetime) -> dict:
         if self.dp is None:

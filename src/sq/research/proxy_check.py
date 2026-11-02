@@ -29,11 +29,13 @@ MEDIAN_DEVIATION_MAX_BPS = 50.0
 
 
 def fetch_kraken_ohlcv(pair: str, timeframe: str, limit: int) -> pd.DataFrame:
-    exchange = ccxt.kraken({"enableRateLimit": True})
+    exchange = ccxt.kraken({"enableRateLimit": True, "timeout": 30000})
     rows = exchange.fetch_ohlcv(pair, timeframe=timeframe, limit=limit)
     df = pd.DataFrame(rows, columns=["timestamp", "open", "high", "low", "close", "volume"])
     df["date"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
-    return df.set_index("date")
+    # Kraken returns the still-forming candle last; its close is not final.
+    closed = df["date"] + pd.Timedelta(timeframe) <= pd.Timestamp.now(tz="UTC")
+    return df[closed].set_index("date")
 
 
 def load_binance_ohlcv(datadir: Path, pair: str, timeframe: str) -> pd.DataFrame:

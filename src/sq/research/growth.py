@@ -39,15 +39,14 @@ Randomness uses the legacy `numpy.random.RandomState` with a fixed seed, so a
 rebuilt report is reproducible exactly from the same input.
 """
 
-import math
 from datetime import date
 
 import numpy as np
 
-from sq.research.statistics import daily_returns, max_drawdown_pct
+from sq.research.h1 import DEFAULT_SEED
+from sq.research.metrics import max_drawdown_pct
+from sq.research.statistics import ANNUALISATION_DAYS, _round, daily_returns
 
-ANNUALISATION_DAYS = 365
-DEFAULT_SEED = 20260924  # H1's predeclaration date
 DEFAULT_RESAMPLES = 10_000
 DEFAULT_GRID = 401
 FRACTIONS = (0.25, 0.5, 0.75, 1.0)
@@ -58,12 +57,6 @@ QUALIFICATION = (
     "These figures describe the recorded path and its resamples; they do not establish "
     "an edge and do not authorise capital."
 )
-
-
-def _round(value: float | None, digits: int = 4) -> float | None:
-    if value is None or math.isnan(value):
-        return None
-    return round(float(value), digits)
 
 
 def _log_growth(returns: np.ndarray, fractions: np.ndarray) -> np.ndarray:
@@ -126,14 +119,6 @@ def kelly_fraction(returns: np.ndarray, f_max: float = 1.0, grid: int = DEFAULT_
     return float(fractions[int(np.argmax(mean_log))])
 
 
-def kelly_fraction_unconstrained(
-    returns: np.ndarray, f_max: float = UNCONSTRAINED_F_MAX, grid: int = DEFAULT_GRID
-) -> float:
-    """Same search with a loose cap, to report whether the optimum exceeds the
-    no-leverage cap of 1."""
-    return kelly_fraction(returns, f_max=f_max, grid=grid)
-
-
 def _bootstrap_kelly(
     returns: np.ndarray, resamples: int, seed: int, f_max: float, grid: int
 ) -> np.ndarray:
@@ -186,7 +171,7 @@ def kelly_report(
         "f_max": f_max,
         "wider_search_f_max": UNCONSTRAINED_F_MAX,
         "kelly_fraction": _round(kelly_fraction(r, f_max)),
-        "kelly_fraction_unconstrained": _round(kelly_fraction_unconstrained(r)),
+        "kelly_fraction_unconstrained": _round(kelly_fraction(r, f_max=UNCONSTRAINED_F_MAX)),
         "kelly_ci95": [
             _round(float(np.percentile(fractions, 2.5))),
             _round(float(np.percentile(fractions, 97.5))),
@@ -252,7 +237,9 @@ def frontier(
 # --- per run --------------------------------------------------------------------
 
 
-def growth_report(run: dict, resamples: int = DEFAULT_RESAMPLES, seed: int = DEFAULT_SEED) -> dict:
+def growth_report(
+    run: dict, notional: float, resamples: int = DEFAULT_RESAMPLES, seed: int = DEFAULT_SEED
+) -> dict:
     """Growth block for one run of `equity-curves.json`."""
     trade_returns = [t["return_pct"] for t in run["trades"]]
     return {
@@ -261,6 +248,6 @@ def growth_report(run: dict, resamples: int = DEFAULT_RESAMPLES, seed: int = DEF
             "kelly": kelly_report(trade_returns, resamples, seed),
         },
         "daily_level": daily_growth(run["strategy"], run["dates"]),
-        "frontier": frontier(run["strategy"], float(run["strategy"][0])),
+        "frontier": frontier(run["strategy"], notional),
         "qualification": QUALIFICATION,
     }

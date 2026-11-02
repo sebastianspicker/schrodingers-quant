@@ -41,21 +41,6 @@ def daily_returns() -> np.ndarray:
     return rng.normal(0.0008, 0.02, size=400)
 
 
-@pytest.mark.parametrize(
-    ("p", "z"), [(0.975, 1.959964), (0.5, 0.0), (0.84134474606854, 1.0), (0.999, 3.090232)]
-)
-def test_norm_ppf_known_quantiles(p, z):
-    assert ledger.norm_ppf(p) == pytest.approx(z, abs=1e-6)
-    assert ledger.norm_ppf(1 - p) == pytest.approx(-z, abs=1e-6)
-
-
-def test_norm_ppf_round_trips_to_1e_10():
-    for p in (0.01, 0.3, 0.9, 0.9999):
-        assert ledger.norm_cdf(ledger.norm_ppf(p)) == pytest.approx(p, abs=1e-10)
-    with pytest.raises(ValueError):
-        ledger.norm_ppf(1.0)
-
-
 def test_expected_max_sharpe_zero_for_one_trial_and_increasing():
     assert ledger.expected_max_sharpe(1, 0.01) == 0.0
     values = [ledger.expected_max_sharpe(n, 0.01) for n in (2, 5, 20, 100)]

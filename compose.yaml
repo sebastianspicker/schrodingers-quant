@@ -69,7 +69,6 @@ services:
     environment:
       TZ: UTC
       PYTHONPATH: /workspace/src
-      JEV_API_KEY: ${JEV_API_KEY:-}
     volumes:
       - ./src:/workspace/src:ro
       - ./user_data/runtime/jev:/jev-runtime

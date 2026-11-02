@@ -42,6 +42,17 @@ from pathlib import Path
 
 from sq.research import h1, h2
 
+# Sensitivity is reported once over the combined train+validation span (H1.md: "on
+# train + validation only"), never on the held-out period, and never used to select
+# a strategy.
+H1_RUNS = {
+    "train": h1.TRAIN_RUNS,
+    "validation": h1.VALIDATION_RUNS,
+    "sensitivity": h1.SENSITIVITY_RUNS,
+    "eth-robustness": h1.ETH_ROBUSTNESS_RUNS,
+    "heldout": h1.HELDOUT_RUNS,
+}
+
 # `pipeline` imports Freqtrade and is loaded only by the subcommands that need
 # it, so `stats` works on a development machine without the image.
 
@@ -202,22 +213,31 @@ def main(argv: list[str] | None = None) -> int:
         return pipeline.proxy_check()
     elif args.subcommand == "bias":
         pipeline.bias()
-    elif args.subcommand == "train":
-        pipeline.train()
-    elif args.subcommand == "validation":
-        pipeline.validation()
     elif args.subcommand == "h2-train":
         for run in h2.TRAIN_RUNS:
             pipeline.backtest(run, record_dir=h2.RECORD_DIR)
     elif args.subcommand == "h2-validation":
         for run in h2.VALIDATION_RUNS:
             pipeline.backtest(run, record_dir=h2.RECORD_DIR)
-    elif args.subcommand == "sensitivity":
-        pipeline.sensitivity()
-    elif args.subcommand == "eth-robustness":
-        pipeline.eth_robustness()
-    elif args.subcommand == "heldout":
-        pipeline.heldout()
+    elif args.subcommand in H1_RUNS:
+        runs = H1_RUNS[args.subcommand]
+        if args.subcommand == "heldout":
+            # Finish a partial held-out run (e.g. stress failed after base was
+            # recorded); with every record present, backtest() refuses the first.
+            missing = [r for r in runs if not (h1.RECORD_DIR / f"{r.name}.json").exists()]
+            runs = missing or runs
+            # Run once, after the strategy is frozen (research/hypotheses/H1.md).
+            print(
+                "sq.research heldout: this evaluates H1's predeclared held-out",
+                file=sys.stderr,
+            )
+            print(
+                "period (2024-07-01 -> 2026-09-20). Run this once, only after the",
+                file=sys.stderr,
+            )
+            print("strategy is frozen, per research/hypotheses/H1.md.", file=sys.stderr)
+        for run in runs:
+            pipeline.backtest(run)
     elif args.subcommand == "benchmark":
         pipeline.benchmark(args.period, args.pair)
     elif args.subcommand == "equity-curves":

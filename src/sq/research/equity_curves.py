@@ -22,7 +22,7 @@ import pandas as pd
 from freqtrade.data.btanalysis import load_backtest_data
 from freqtrade.data.history import load_pair_history
 
-from sq.research import h1
+from sq.research import h1, provenance
 from sq.research.metrics import equity_curve, max_drawdown_pct
 
 # The demo shows H1's BTC/EUR runs, keyed "<period>-<cost>" (e.g. "train-base").
@@ -102,5 +102,5 @@ def build_equity_curves(experiment: Path, datadir: Path, out: Path) -> None:
         "source": "research/experiments/H1 (mtm-*.json and the backtest results they name)",
         "runs": runs,
     }
-    out.write_text(json.dumps(payload, separators=(",", ":")) + "\n")
+    provenance.atomic_write_text(out, json.dumps(payload, separators=(",", ":")) + "\n")
     print(f"wrote {out}")

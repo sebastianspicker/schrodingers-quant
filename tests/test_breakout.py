@@ -13,7 +13,7 @@ import pandas as pd
 import pytest
 from conftest import REPO_ROOT
 
-from sq.research import breakout, proxy_data
+from sq.research import breakout, provenance, proxy_data
 
 RECORD = REPO_ROOT / "research" / "experiments" / "H1" / "equity-curves.json"
 FEES = {"base": 0.005, "stress": 0.01}
@@ -37,7 +37,7 @@ def test_proxy_candles_match_manifest(candles):
     assert candles["date"].iloc[-1].isoformat() == entry["last_candle"]
     tracked = json.loads(proxy_data.MANIFEST_PATH.read_text())["entries"][0]
     assert tracked["file"] == "binance-BTC_EUR-4h.csv.gz"
-    assert tracked["sha256"] == proxy_data.sha256()
+    assert tracked["sha256"] == provenance.sha256_file(proxy_data.DEFAULT_PATH)
     assert (tracked["row_count"], tracked["first_candle"], tracked["last_candle"]) == (
         entry["row_count"],
         entry["first_candle"],

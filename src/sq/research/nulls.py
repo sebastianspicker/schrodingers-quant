@@ -72,17 +72,18 @@ import json
 import math
 import zlib
 from collections.abc import Callable
+from statistics import NormalDist
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from sq.research import breakout
+from sq.research import breakout, stylized
+from sq.research.h1 import CANDLES_PER_YEAR
 from sq.research.metrics import max_drawdown_pct
 
 WARMUP = 121  # candles before the window, enough for the 120-candle entry channel
 STEP = breakout.STEP
-STEPS_PER_YEAR = 6 * 365
 DEFAULT_BLOCK = 30
 
 # --- path construction ------------------------------------------------------
@@ -380,26 +381,16 @@ def simulate_garch_t(
 def fit_mrw(r: np.ndarray, max_lag: int = 120) -> dict:
     """Multifractal random walk parameters (Bacry, Delour and Muzy 2001).
 
-    sigma is the standard deviation of r. lambda^2 is the slope of
-    Cov(ln|r_t|, ln|r_{t+tau}|) against -ln(tau) for tau = 1..max_lag (zero
-    |r| replaced by the smallest positive one); the intercept is
-    lambda^2 ln(L), giving the integral scale L, clipped to [max_lag, 10 n].
-    A non-positive slope gives lambda^2 = 0 (no multifractality).
+    sigma is the standard deviation of r; lambda^2 and the integral scale come
+    from `stylized.mrw_intermittency`. A non-positive slope gives lambda^2 = 0
+    (no multifractality) with the integral scale at max_lag.
     """
     r = np.asarray(r, dtype=float)
-    n = len(r)
-    absolute = np.abs(r)
-    positive = absolute[absolute > 0]
-    log_abs = np.log(np.where(absolute > 0, absolute, positive.min()))
-    centred = log_abs - log_abs.mean()
-    lags = np.arange(1, max_lag + 1)
-    cov = np.array([np.mean(centred[:-tau] * centred[tau:]) for tau in lags])
-    slope, intercept = np.polyfit(-np.log(lags), cov, 1)
-    if slope <= 1e-12:
+    fit = stylized.mrw_intermittency(r, max_lag)
+    if fit["lambda2"] <= 1e-12:
         lambda2, integral = 0.0, float(max_lag)
     else:
-        lambda2 = float(slope)
-        integral = float(np.clip(math.exp(min(intercept / slope, 50.0)), max_lag, 10 * n))
+        lambda2, integral = fit["lambda2"], fit["integral_scale_candles"]
     return {"sigma": float(r.std(ddof=1)), "lambda2": lambda2, "integral_scale": integral}
 
 
@@ -672,7 +663,7 @@ def forward_calibration(
     without an F3 breach. `*_ignoring_f3` and `trades_per_year` describe
     counterfactual continuation despite STOP, the latter over `max_years`.
     """
-    n = STEPS_PER_YEAR * max_years
+    n = CANDLES_PER_YEAR * max_years
     start = pd.Timestamp("2030-01-01", tz="UTC")
     first = start - WARMUP * STEP
     path_end = start + n * STEP
@@ -771,10 +762,6 @@ def forward_calibration(
 # --- D. first passage -------------------------------------------------------
 
 
-def _phi(x: float) -> float:
-    return 0.5 * (1 + math.erf(x / math.sqrt(2)))
-
-
 def stop_hit_probability(
     sigma_annual: float, horizon_days: float, stop: float = 0.20, drift_annual: float = 0.0
 ) -> float:
@@ -782,13 +769,14 @@ def stop_hit_probability(
     volatility `sigma_annual` (both per year) touches ln(1 - stop) within the
     horizon (reflection principle, continuous monitoring).
     """
+    if sigma_annual <= 0:
+        return 0.0
     b = -math.log(1 - stop)
     t = horizon_days / 365
     s = sigma_annual * math.sqrt(t)
     mu = drift_annual
-    return _phi((-b - mu * t) / s) + math.exp(-2 * mu * b / sigma_annual**2) * _phi(
-        (-b + mu * t) / s
-    )
+    phi = NormalDist().cdf
+    return phi((-b - mu * t) / s) + math.exp(-2 * mu * b / sigma_annual**2) * phi((-b + mu * t) / s)
 
 
 def first_passage_check(
@@ -807,7 +795,7 @@ def first_passage_check(
     """
     rng = _rng(seed, "first_passage")
     steps = [int(round(days * 6)) for days in horizons_days]
-    sigma_step = sigma_annual / math.sqrt(STEPS_PER_YEAR)
+    sigma_step = sigma_annual / math.sqrt(CANDLES_PER_YEAR)
     log_price = np.cumsum(sigma_step * rng.standard_normal((trials, max(steps))), axis=1)
     running_min = np.minimum.accumulate(log_price, axis=1)
     barrier = math.log(1 - stop)

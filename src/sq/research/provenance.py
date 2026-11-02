@@ -36,6 +36,14 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def atomic_write_text(path: Path, text: str) -> None:
+    """Write `text` to `path` via a same-directory temp file and `os.replace`, so a
+    crash never leaves a truncated tracked record."""
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(text)
+    os.replace(tmp, path)
+
+
 def _manifest_hash(manifest_path: Path | None) -> str | None:
     return sha256_file(manifest_path) if manifest_path and manifest_path.exists() else None
 

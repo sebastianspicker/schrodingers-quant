@@ -23,10 +23,16 @@ import sys
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from urllib.parse import quote
 
 from sq.config import TRACKED_BASE_CONFIG, load_config
-from sq.live import CliArgumentParser, SafeMessageError, cli_error, trade_db_error
+from sq.live import (
+    CliArgumentParser,
+    SafeMessageError,
+    cli_error,
+    db_path_from_url,
+    read_only_uri,
+    trade_db_error,
+)
 
 # ccxt and Freqtrade are imported inside the I/O functions, so the pure
 # comparison (`reconcile`, the cursor helpers) is unit-testable without the image.
@@ -218,18 +224,6 @@ def compute_effective_since(base_since: datetime, oldest_open: datetime | None) 
 # --- I/O ---------------------------------------------------------------
 
 
-def db_path_from_url(db_url: str) -> str:
-    """Extract a filesystem path from a `sqlite:///...` db_url."""
-    prefix = "sqlite:///"
-    if not db_url.startswith(prefix):
-        # Never echo the URL: a non-sqlite db_url can carry a password.
-        raise SafeMessageError("Only sqlite db_url values are supported for reconciliation")
-    path = db_url[len(prefix) :]
-    if not path:
-        raise SafeMessageError("db_url has no path")
-    return path
-
-
 def parse_naive_utc(value: str | None) -> datetime | None:
     """Parse a sqlite `orders.order_date` value: stored as a naive UTC timestamp."""
     if not value:
@@ -255,10 +249,8 @@ def parse_since(value: str) -> datetime:
 def read_db_orders(db_url: str, pairs: list[str]) -> tuple[list[DbOrder], dict[str, float]]:
     """Read orders for the given pairs and the open-trade base amount, read-only."""
     path = db_path_from_url(db_url)
-    # Percent-encode the path so `?`, `#` or `%` in a file name cannot swallow `mode=ro`.
-    uri = f"file:{quote(path)}?mode=ro"
     try:
-        connection = sqlite3.connect(uri, uri=True)
+        connection = sqlite3.connect(read_only_uri(path), uri=True)
     except sqlite3.Error as exc:
         raise trade_db_error(exc, path) from exc
     try:

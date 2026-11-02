@@ -41,10 +41,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from sq.research import breakout, growth, ledger, nulls, proxy_data, stylized
+from sq.research import growth, ledger, nulls, provenance, proxy_data, stylized
+from sq.research.h1 import CANDLES_PER_YEAR, DEFAULT_SEED
+from sq.research.statistics import daily_returns
 
 SCHEMA_VERSION = 3
-DEFAULT_SEED = 20260924  # H1's predeclaration date, as statistics.json
 DEFAULT_NULL_TRIALS = 1000
 DEFAULT_CALIBRATION_TRIALS = 1000
 DEFAULT_FIRST_PASSAGE_TRIALS = 20000
@@ -80,10 +81,6 @@ METHOD = {
     "count is not an effective independent-trial estimate; the asymptotic formula does not "
     "correct serial dependence or give a posterior probability of an edge.",
 }
-
-
-def _sha256_bytes(raw: bytes) -> str:
-    return hashlib.sha256(raw).hexdigest()
 
 
 def periods_from_curves(curves: dict) -> dict[str, tuple[str, str]]:
@@ -148,7 +145,7 @@ def build_physics(
             candles["date"] < pd.Timestamp(heldout[1], tz="UTC")
         )
         r_heldout = stylized.log_returns(candles.loc[mask, "close"].to_numpy())
-        sigma = float(np.std(r_heldout, ddof=1) * np.sqrt(6 * 365))
+        sigma = float(np.std(r_heldout, ddof=1) * np.sqrt(CANDLES_PER_YEAR))
         fp = nulls.first_passage_check(sigma, trials=first_passage_trials, seed=seed)
         trades = curves["runs"]["heldout-base"]["trades"]
         hold_days = [
@@ -159,11 +156,11 @@ def build_physics(
         out["first_passage"] = fp
     if "growth" in wanted:
         out["growth"] = {
-            key: growth.growth_report(run, seed=seed) for key, run in curves["runs"].items()
+            key: growth.growth_report(run, curves["notional_eur"], seed=seed)
+            for key, run in curves["runs"].items()
         }
     if "ledger" in wanted:
-        values = np.asarray(curves["runs"]["heldout-base"]["strategy"], dtype=float)
-        daily = values[1:] / values[:-1] - 1
+        daily = daily_returns(curves["runs"]["heldout-base"]["strategy"])
         out["ledger"] = ledger.ledger_report(ledger_data, daily)
     return out
 
@@ -194,14 +191,14 @@ def write_physics(
         curves,
         candles,
         ledger.load_ledger(ledger_path),
-        candles_sha256=proxy_data.sha256(candles_path),
-        curves_sha256=_sha256_bytes(curves_raw),
+        candles_sha256=provenance.sha256_file(candles_path),
+        curves_sha256=hashlib.sha256(curves_raw).hexdigest(),
         **kwargs,
     )
     target = out or (experiment / "physics.json")
-    target.write_text(json.dumps(document, indent=1, allow_nan=False) + "\n")
+    provenance.atomic_write_text(target, json.dumps(document, indent=1, allow_nan=False) + "\n")
     print(f"wrote {target}")
     return target
 
 
-__all__ = ["build_physics", "write_physics", "periods_from_curves", "breakout"]
+__all__ = ["build_physics", "write_physics", "periods_from_curves"]

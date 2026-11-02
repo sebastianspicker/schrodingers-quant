@@ -43,11 +43,12 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from sq.research.h1 import NOTIONAL
+
 ENTRY_CHANNEL = 120
 EXIT_CHANNEL = 60
 STOPLOSS = -0.20
 STEP = pd.Timedelta("4h")
-NOTIONAL = 1000.0
 
 
 @dataclass(frozen=True)
@@ -259,8 +260,3 @@ def summary(
         "stop_exits": int((trades["exit_reason"] == "stop_loss").sum()),
         "max_drawdown_locks": int(trades.attrs.get("max_drawdown_locks", 0)),
     }
-
-
-def daily_marks(curve: pd.Series) -> pd.Series:
-    """The last 4h mark of each UTC day (the basis of `statistics.json`)."""
-    return curve.resample("1D").last().dropna()

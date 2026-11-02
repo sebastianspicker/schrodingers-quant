@@ -51,7 +51,7 @@ def test_capped_fraction_never_exceeds_cap_but_unconstrained_can():
     r = np.array([0.1, 0.2, 0.05, 0.15])  # always positive: growth rises with f
     assert growth.kelly_fraction(r, f_max=1.0) == 1.0
     assert growth.kelly_fraction(r, f_max=0.4) == pytest.approx(0.4)
-    assert growth.kelly_fraction_unconstrained(r) > 1.0
+    assert growth.kelly_fraction(r, f_max=growth.UNCONSTRAINED_F_MAX) > 1.0
     report = growth.kelly_report([10, 20, 5, 15, -2], resamples=300)
     assert report["kelly_ci95"][1] <= 1.0
     assert report["kelly_fraction"] <= 1.0
@@ -115,7 +115,7 @@ def test_growth_report_keys():
         "strategy": [1000.0, 1050.0, 1020.0, 1100.0],
         "trades": [{"return_pct": r} for r in (5.0, -3.0, 8.0)],
     }
-    report = growth.growth_report(run, resamples=100)
+    report = growth.growth_report(run, 1000.0, resamples=100)
     assert set(report) == {"trade_level", "daily_level", "frontier", "qualification"}
     assert set(report["trade_level"]) >= {
         "n",

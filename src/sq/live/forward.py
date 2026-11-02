@@ -55,12 +55,18 @@ from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
 
 import pandas as pd
 
 from sq.config import TRACKED_BASE_CONFIG, load_config
-from sq.live import CliArgumentParser, SafeMessageError, cli_error, trade_db_error
+from sq.live import (
+    CliArgumentParser,
+    SafeMessageError,
+    cli_error,
+    db_path_from_url,
+    read_only_uri,
+    trade_db_error,
+)
 from sq.live import candles as market_data
 from sq.research import h2, metrics
 from sq.research.statistics import Trade, bootstrap_trades, exposure_pct, trade_statistics
@@ -209,20 +215,15 @@ def filled_snapshot(db_path: str, pairs: list[str]) -> tuple[list[PaperTrade], d
     return out, counts
 
 
-def db_path_from_url(db_url: str) -> str:
-    prefix = "sqlite:///"
-    if not db_url.startswith(prefix) or len(db_url) == len(prefix):
-        # Never echo the URL: a non-sqlite db_url can carry a password.
-        raise ReportInputError("Only sqlite db_url values are supported")
-    return db_url[len(prefix) :]
+def parse_utc_arg(value: str) -> pd.Timestamp:
+    """ISO 8601; naive values are UTC."""
+    stamp = pd.Timestamp(value)
+    return stamp.tz_localize("UTC") if stamp.tzinfo is None else stamp.tz_convert("UTC")
 
 
 def parse_db_timestamp(value: str | None) -> pd.Timestamp | None:
     """Freqtrade stores naive UTC timestamps."""
-    if not value:
-        return None
-    stamp = pd.Timestamp(value)
-    return stamp.tz_localize("UTC") if stamp.tzinfo is None else stamp.tz_convert("UTC")
+    return parse_utc_arg(value) if value else None
 
 
 TRADE_COLUMNS = (
@@ -253,45 +254,6 @@ def trades_from_rows(rows: list[tuple]) -> list[PaperTrade]:
         )
         for row in rows
     ]
-
-
-def read_only_uri(db_path: str) -> str:
-    """sqlite URI that opens `db_path` read-only. The path is percent-encoded
-    so that `?`, `#` or `%` in a file name cannot swallow `mode=ro`."""
-    return f"file:{quote(db_path)}?mode=ro"
-
-
-def read_paper_trades(db_path: str, pairs: list[str]) -> list[PaperTrade]:
-    """All trades for `pairs`, oldest first, from a read-only connection."""
-    connection = sqlite3.connect(read_only_uri(db_path), uri=True)
-    try:
-        placeholders = ",".join("?" for _ in pairs)
-        rows = connection.execute(
-            f"SELECT {TRADE_COLUMNS} FROM trades WHERE pair IN ({placeholders}) ORDER BY open_date",
-            pairs,
-        ).fetchall()
-    finally:
-        connection.close()
-    return trades_from_rows(rows)
-
-
-def read_order_counts(db_path: str, pairs: list[str]) -> dict[str, int]:
-    """Orders by `<ft_order_side>:<status>` (Freqtrade sides are `buy`, `sell`,
-    `stoploss`; e.g. `buy:closed`, `buy:canceled`)."""
-    connection = sqlite3.connect(read_only_uri(db_path), uri=True)
-    try:
-        placeholders = ",".join("?" for _ in pairs)
-        rows = connection.execute(
-            f"""
-            SELECT ft_order_side, COALESCE(status, 'unknown'), COUNT(*)
-            FROM orders WHERE ft_pair IN ({placeholders})
-            GROUP BY ft_order_side, status
-            """,
-            pairs,
-        ).fetchall()
-    finally:
-        connection.close()
-    return {f"{side}:{status}": int(count) for side, status, count in rows}
 
 
 # --- candles -------------------------------------------------------------------
@@ -482,9 +444,11 @@ def signal_fidelity(
     """
     valid_from = signals_valid_from if signals_valid_from is not None else window_start - step
     acknowledged = set(acknowledged or [])
-    signals = sorted(
-        s for s in entry_signals if max(window_start - step, valid_from) <= s < window_end
-    )
+    # An in-window fill may act on an earlier defined signal (submitted just
+    # before the start); only signals from the candle before the start on are
+    # expected to produce an entry.
+    defined = sorted(s for s in entry_signals if valid_from <= s < window_end)
+    signals = [s for s in defined if s >= window_start - step]
     matched: dict[int, pd.Timestamp] = {}
     unexpected: list[dict] = []
     unverifiable: list[dict] = []
@@ -495,7 +459,7 @@ def signal_fidelity(
         if decision < valid_from + step:
             unverifiable.append({"trade_id": trade.id, "open_date": trade.open_date.isoformat()})
             continue
-        candidates = [s for s in signals if s + step <= decision < s + 2 * step]
+        candidates = [s for s in defined if s + step <= decision < s + 2 * step]
         if candidates:
             matched[trade.id] = candidates[-1]
         else:
@@ -1088,12 +1052,6 @@ def atomic_report(path: Path, report: dict) -> None:
     finally:
         if os.path.exists(name):
             os.unlink(name)
-
-
-def parse_utc_arg(value: str) -> pd.Timestamp:
-    """ISO 8601; naive values are UTC."""
-    stamp = pd.Timestamp(value)
-    return stamp.tz_localize("UTC") if stamp.tzinfo is None else stamp.tz_convert("UTC")
 
 
 def record_k2_limit(repo_root: Path) -> float | None:

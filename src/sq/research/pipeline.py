@@ -13,7 +13,6 @@ changing the Freqtrade argv the step builds.
 
 import json
 import subprocess
-import sys
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
@@ -67,7 +66,7 @@ def write_summary(
     }
     out = record_dir / f"{run.name}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    provenance.atomic_write_text(out, json.dumps(summary, indent=2, sort_keys=True) + "\n")
     print(f"Wrote {out}")
     print(json.dumps(summary["metrics"], indent=2, sort_keys=True))
 
@@ -90,6 +89,9 @@ def write_mtm(
     # H1's period dates are inclusive, so the marked window runs through the
     # period's last day; the record's `end` is the window's exclusive bound
     # (the next day), which equity_curves.py reapplies to rebuild the curve.
+    # Freqtrade's --timerange end is exclusive, so the backtest itself stops at
+    # 00:00 of the last day. The held-out mtm records instead end at that exclusive
+    # end (2026-09-20) and must never be rewritten (ADR-0005, see backtest()).
     start = pd.Timestamp(run.start, tz="UTC")
     end = pd.Timestamp(run.end, tz="UTC") + pd.Timedelta(days=1)
     window = candles[(candles["date"] >= start) & (candles["date"] < end)]
@@ -108,7 +110,7 @@ def write_mtm(
     )
     out = record_dir / f"mtm-{run.name}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(report, indent=2) + "\n")
+    provenance.atomic_write_text(out, json.dumps(report, indent=2) + "\n")
     print(f"Wrote {out}")
 
 
@@ -123,6 +125,11 @@ def backtest(
 ) -> None:
     """Run one `freqtrade backtesting` invocation and record its summary and
     marked-to-market report."""
+    if run.period == "heldout" and (record_dir / f"{run.name}.json").exists():
+        raise SystemExit(
+            f"{run.name}: held-out record already exists (ADR-0005: one evaluation only); "
+            "deleting the record by hand is the override."
+        )
     results_dir = backtest_root / run.name
     # --backtest-directory only writes timestamped results *inside* the given
     # path if that path already exists as a directory; otherwise it treats it
@@ -154,45 +161,6 @@ def backtest(
 
     write_summary(run, results_dir, record_dir=record_dir, manifest_path=manifest_path)
     write_mtm(run, results_dir, record_dir=record_dir, manifest_path=manifest_path, datadir=datadir)
-
-
-def train(**kwargs) -> None:
-    for run in h1.TRAIN_RUNS:
-        backtest(run, **kwargs)
-
-
-def validation(**kwargs) -> None:
-    for run in h1.VALIDATION_RUNS:
-        backtest(run, **kwargs)
-
-
-def sensitivity(**kwargs) -> None:
-    # Sensitivity is reported once over the combined train+validation span
-    # (H1.md: "on train + validation only"), never on the held-out period,
-    # and never used to select a strategy.
-    for run in h1.SENSITIVITY_RUNS:
-        backtest(run, **kwargs)
-
-
-def eth_robustness(**kwargs) -> None:
-    for run in h1.ETH_ROBUSTNESS_RUNS:
-        backtest(run, **kwargs)
-
-
-def heldout(**kwargs) -> None:
-    # DEFINED BUT MUST NOT BE RUN before the strategy is frozen; run once,
-    # after the strategy is frozen (research/hypotheses/H1.md).
-    print(
-        "sq.research heldout: this evaluates H1's predeclared held-out",
-        file=sys.stderr,
-    )
-    print(
-        "period (2024-07-01 -> 2026-09-20). Run this once, only after the",
-        file=sys.stderr,
-    )
-    print("strategy is frozen, per research/hypotheses/H1.md.", file=sys.stderr)
-    for run in h1.HELDOUT_RUNS:
-        backtest(run, **kwargs)
 
 
 # --- bias checks ---------------------------------------------------------

@@ -53,8 +53,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from sq.research.h1 import DEFAULT_SEED
+from sq.research.metrics import max_drawdown_pct
+from sq.research.provenance import atomic_write_text
+
 ANNUALISATION_DAYS = 365
-DEFAULT_SEED = 20260924  # H1's predeclaration date
 DEFAULT_TRADE_RESAMPLES = 10_000
 DEFAULT_SHARPE_RESAMPLES = 2_000
 DEFAULT_BLOCK_DAYS = 20
@@ -68,8 +71,8 @@ COST_PER_SIDE = {"base": 0.005, "stress": 0.01}
 
 
 def _round(value: float | None, digits: int = 4) -> float | None:
-    """Round for the record; NaN (undefined ratio) becomes None (JSON null)."""
-    if value is None or math.isnan(value):
+    """Round for the record; NaN or infinity (undefined figure) becomes None (JSON null)."""
+    if value is None or not math.isfinite(value):
         return None
     return round(float(value), digits)
 
@@ -112,12 +115,6 @@ def beta_and_correlation(returns: np.ndarray, benchmark: np.ndarray) -> tuple[fl
     beta = cov / var_b if var_b else float("nan")
     corr = cov / (sd_r * math.sqrt(var_b)) if sd_r and var_b else float("nan")
     return beta, corr
-
-
-def max_drawdown_pct(values: list[float] | np.ndarray) -> float:
-    v = np.asarray(values, dtype=float)
-    peaks = np.maximum.accumulate(v)
-    return float(np.max((peaks - v) / peaks) * 100)
 
 
 def longest_drawdown_days(values: list[float] | np.ndarray) -> int:
@@ -359,7 +356,6 @@ def random_timing_trial(
     equity = np.empty(days + 1)
     equity[0] = notional
     balance = notional
-    pos = 0
     day = 0
     for gap, dur in zip(gaps[:-1], durations, strict=True):  # the last gap runs to the end
         equity[day + 1 : day + 1 + gap] = balance
@@ -370,7 +366,6 @@ def random_timing_trial(
         balance += notional * ((1 - fee) ** 2 * path[-1] - 1)
         equity[day + dur] = balance  # exit fee paid on the last held day
         day += dur
-        pos += 1
     equity[day + 1 :] = balance
     return (balance / notional - 1) * 100, max_drawdown_pct(equity)
 
@@ -605,7 +600,7 @@ def assess_run(
         "trades": stats,
         "power": power_analysis(
             stats.get("mean_pct", 0.0),
-            stats.get("sd_pct", 0.0),
+            stats.get("sd_pct") or 0.0,
             stats["count"] / years if years > 0 else 0.0,
         ),
         "bootstrap_trades": bootstrap_trades(
@@ -696,6 +691,8 @@ def write_statistics(experiment: Path, out: Path | None = None, **kwargs) -> Pat
         raise ValueError(f"{curves_path}: not valid JSON ({exc})") from exc
     statistics = build_statistics(curves, source_sha256=hashlib.sha256(raw).hexdigest(), **kwargs)
     target = out or (experiment / "statistics.json")
-    target.write_text(json.dumps(statistics, indent=1, sort_keys=False, allow_nan=False) + "\n")
+    atomic_write_text(
+        target, json.dumps(statistics, indent=1, sort_keys=False, allow_nan=False) + "\n"
+    )
     print(f"wrote {target}")
     return target

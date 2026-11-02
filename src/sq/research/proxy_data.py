@@ -14,13 +14,14 @@ tolerated because Freqtrade's backtest ran over the same rows.
 """
 
 import gzip
-import hashlib
 import json
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from sq.live.candles import COLUMNS, CandleError
+from sq.research import provenance
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_PATH = REPO_ROOT / "research" / "data" / "binance-BTC_EUR-4h.csv.gz"
@@ -29,17 +30,13 @@ STEP = pd.Timedelta("4h")
 KNOWN_GAPS = {pd.Timestamp("2020-02-19T16:00:00Z")}
 
 
-def sha256(path: Path = DEFAULT_PATH) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
 def verify_manifest(path: Path = DEFAULT_PATH, manifest_path: Path = MANIFEST_PATH) -> None:
     """Raise ValueError unless the candle file's SHA-256 is the one the manifest records."""
     entries = json.loads(manifest_path.read_text()).get("entries", [])
     entry = next((e for e in entries if e.get("file") == path.name), None)
     if entry is None:
         raise ValueError(f"{path.name}: not listed in {manifest_path.name}")
-    actual = sha256(path)
+    actual = provenance.sha256_file(path)
     if actual != entry["sha256"]:
         raise ValueError(
             f"{path.name}: SHA-256 {actual} does not match {manifest_path.name} ({entry['sha256']})"
@@ -59,7 +56,7 @@ def load_candles(path: Path = DEFAULT_PATH) -> pd.DataFrame:
     if (dates != dates.dt.floor(STEP)).any():
         raise CandleError(f"{path.name}: timestamps are not aligned to 4h")
     prices = candles[["open", "high", "low", "close"]]
-    if not (prices > 0).all().all() or not prices.notna().all().all():
+    if not (prices > 0).all().all() or not np.isfinite(prices).all().all():
         raise CandleError(f"{path.name}: prices must be finite and positive")
     if (candles["high"] < prices.max(axis=1)).any() or (candles["low"] > prices.min(axis=1)).any():
         raise CandleError(f"{path.name}: invalid OHLC bounds")

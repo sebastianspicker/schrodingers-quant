@@ -281,7 +281,14 @@ function renderStats(run) {
   set("wl", `${pct(mean(wins))} / ${losses.length ? pct(mean(losses)) : "n/a"}`);
   set("top2", minus(`${pct(sum(top)).replace(" %", " pp")} / ${pct(sum(r) - sum(top)).replace(" %", " pp")}`));
   set("hold", `${Math.round(median / 24)} d`);
-  set("status", `t < 2: the mean trade is not distinguishable from zero at conventional levels (n = ${r.length}).`);
+  set(
+    "status",
+    !Number.isFinite(t)
+      ? `t is not available (n = ${r.length}).`
+      : t < 2
+        ? `t < 2: the mean trade is not distinguishable from zero at conventional levels (n = ${r.length}).`
+        : `t ≥ 2: the mean trade is distinguishable from zero at conventional levels (n = ${r.length}).`,
+  );
   document.getElementById("stats-range").textContent = `${run.dates[0]} → ${run.dates.at(-1)}`;
   root.classList.remove("is-loading");
 }

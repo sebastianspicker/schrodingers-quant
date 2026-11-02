@@ -39,17 +39,11 @@ import math
 import numpy as np
 import pandas as pd
 
-DEFAULT_SEED = 20260924  # H1's predeclaration date
+from sq.research.h1 import CANDLES_PER_YEAR, DEFAULT_SEED
+from sq.research.statistics import _round
+
 DEFAULT_RESAMPLES = 200
-CANDLES_PER_YEAR = 6 * 365
 DEFAULT_LAGS = (1, 2, 6, 30)
-
-
-def _round(value: float | None, digits: int = 4) -> float | None:
-    """Round for the record; NaN or infinity (undefined figure) becomes None."""
-    if value is None or not math.isfinite(value):
-        return None
-    return round(float(value), digits)
 
 
 def log_returns(close: np.ndarray) -> np.ndarray:

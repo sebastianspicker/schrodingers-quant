@@ -26,8 +26,8 @@ Jev is a prospective, optional observation and entry filter. The current
 tracked default does not call it (`H1ChannelBreakout` stays the dry-run
 strategy), and it has no role in order execution. No model key or exchange
 credential belongs in this directory or in the Freqtrade config. A model key,
-when one exists, comes only from the `JEV_API_KEY` environment variable (see
-`src/sq/jev/providers.py` and the `jev-worker` service in `compose.yaml`).
+once a real provider exists, must come only from the environment of the
+`jev-worker` service in `compose.yaml`.
 
 The plan is staged:
 
@@ -52,8 +52,7 @@ entries. Deterministic risk limits and exits must keep working without Jev.
 
 - **Shadow mode, the offline comparison and the live-filter mechanism are
   built** (`sq.jev`, `user_data/strategies/H1JevShadow.py`). No real model is
-  called: the only working provider is `NullProvider`, which always abstains.
-  `JevProvider` is a documented stub that raises `NotImplementedError`; this
+  called: the only provider is `NullProvider`, which always abstains. This
   repository has no Jev API access or documentation.
 - **The offline matched comparison needs real recorded assessments** on forward
   data (collected after a shadow run) before it says anything.
@@ -67,11 +66,11 @@ entries. Deterministic risk limits and exits must keep working without Jev.
 
 ## Modes (`H1JevShadow`, `confirm_trade_entry` only)
 
-The mode is set with the merged Freqtrade config's `"jev"` key. If a future
-Freqtrade config schema ever rejects that key, the strategy falls back to the
-`SQ_JEV_MODE`, `SQ_JEV_DIR` and `SQ_JEV_TTL_MINUTES` environment variables. The
-module docstring in `user_data/strategies/H1JevShadow.py` explains why the
-config key currently survives Freqtrade's schema validation.
+The mode is set with the merged Freqtrade config's `"jev"` key, the only
+source of Jev settings. The module docstring in
+`user_data/strategies/H1JevShadow.py` explains why the config key survives
+Freqtrade's schema validation; `make validate-report` checks it against the
+pinned image.
 
 ```json
 {
@@ -98,7 +97,7 @@ config key currently survives Freqtrade's schema validation.
 
 A malformed `jev` setting stops the bot from starting instead of falling back
 to `"off"`: a `jev` value that is not an object, a `jev` object without `mode`,
-or a `mode` (or `SQ_JEV_MODE`) that is not exactly `off`, `shadow` or `filter`,
+or a `mode` that is not exactly `off`, `shadow` or `filter`,
 plus a non-numeric or non-positive `assessment_ttl_minutes`. This is deliberate,
 so a typo such as `{"jev": {"mod": "filter"}}` cannot silently disable a filter.
 The effective mode, directory and TTL are logged once at startup.
@@ -265,9 +264,9 @@ harness does not invent one now.
 
 - **A real provider** needs actual Jev API access and documentation, and none
   exist here: the endpoint, authentication, request and response schema,
-  pricing, rate limits, and a spending cap enforced by the worker.
-  `sq.jev.providers.JevProvider` documents exactly what is missing and raises
-  `NotImplementedError` rather than guessing.
+  pricing, rate limits, and a spending cap enforced by the worker. A provider
+  is added to `sq.jev.providers` (and to the worker's `--provider` choices)
+  only once those are known, rather than guessing.
 - **The offline comparison** needs assessments recorded by shadow mode running
   on real forward data (collected after implementation); nothing here backfills
   or simulates that. It must also compare the model against a deterministic rule
@@ -283,7 +282,7 @@ harness does not invent one now.
 | --- | --- |
 | Candidate | An entry the strategy wants to make, recorded before Freqtrade opens the trade. |
 | Assessment | Jev's answer for one candidate: approve, reject or abstain, with timing and version data. |
-| Provider | The code that calls a model. `NullProvider` always abstains; `JevProvider` is an unimplemented stub. |
+| Provider | The code that calls a model. `NullProvider`, the only one so far, always abstains. |
 | Shadow mode | Records candidates without affecting any trade. |
 | Filter mode | Blocks an entry unless a fresh `approve` exists. |
 | Fail closed | On any error, block the entry rather than allow it. |

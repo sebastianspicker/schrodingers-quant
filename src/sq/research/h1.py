@@ -17,11 +17,17 @@ VALIDATION_START = "2023-01-01"
 VALIDATION_END = "2024-06-30"
 HELDOUT_START = "2024-07-01"
 HELDOUT_END = "2026-09-20"
+# Freqtrade's --timerange end is exclusive, so a backtest stops at 00:00 of the
+# period's last day. write_mtm marks through that last day (end = last day + 1), as
+# the train, validation, sensitivity and ETH records do. The held-out mtm records end
+# at the exclusive Freqtrade end (2026-09-20) and must never be rewritten (A-03).
 
 FEE_BASE = 0.005
 FEE_STRESS = 0.01
 
 NOTIONAL = 1000.0
+CANDLES_PER_YEAR = 6 * 365  # 4h candles
+DEFAULT_SEED = 20260924  # H1's predeclaration date
 
 # lookahead-analysis/recursive-analysis probe a short window right at the
 # timerange start; the Binance BTC/EUR feed only begins 2020-01-03, so start a

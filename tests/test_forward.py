@@ -72,88 +72,10 @@ def create_db(path: Path, trades: list[dict], orders: list[dict]) -> str:
     return str(path)
 
 
-def test_read_paper_trades_and_order_counts(tmp_path: Path) -> None:
-    db = create_db(
-        tmp_path / "dry-run.sqlite",
-        [
-            {
-                "id": 1,
-                "pair": "BTC/EUR",
-                "is_open": 0,
-                "open_date": "2025-01-05 00:00:30.123456",
-                "close_date": "2025-01-07 00:00:20",
-                "open_rate": 100.0,
-                "close_rate": 110.0,
-                "amount": 0.08,
-                "stake_amount": 8.0,
-                "fee_open": 0.004,
-                "fee_close": 0.004,
-                "close_profit_abs": 0.7355,
-                "close_profit": 0.0919,
-                "exit_reason": "exit_signal",
-                "strategy": "H1ChannelBreakout",
-                "timeframe": "4h",
-            },
-            {
-                "id": 2,
-                "pair": "BTC/EUR",
-                "is_open": 1,
-                "open_date": "2025-01-09 00:00:10",
-                "close_date": None,
-                "open_rate": 120.0,
-                "close_rate": None,
-                "amount": 0.07,
-                "stake_amount": 8.0,
-                "fee_open": 0.004,
-                "fee_close": None,
-                "close_profit_abs": None,
-                "close_profit": None,
-                "exit_reason": None,
-                "strategy": "H1ChannelBreakout",
-                "timeframe": "4h",
-            },
-            {
-                "id": 3,
-                "pair": "ETH/EUR",
-                "is_open": 0,
-                "open_date": "2025-01-01 00:00:00",
-                "close_date": "2025-01-02 00:00:00",
-                "open_rate": 1.0,
-                "close_rate": 1.0,
-                "amount": 1.0,
-                "stake_amount": 8.0,
-                "fee_open": 0.004,
-                "fee_close": 0.004,
-                "close_profit_abs": 0.0,
-                "close_profit": 0.0,
-                "exit_reason": "exit_signal",
-                "strategy": "H1ChannelBreakout",
-                "timeframe": "4h",
-            },
-        ],
-        [
-            {"ft_pair": "BTC/EUR", "ft_order_side": "entry", "status": "closed", "order_id": "a"},
-            {"ft_pair": "BTC/EUR", "ft_order_side": "entry", "status": "canceled", "order_id": "b"},
-            {"ft_pair": "BTC/EUR", "ft_order_side": "exit", "status": "closed", "order_id": "c"},
-            {"ft_pair": "ETH/EUR", "ft_order_side": "entry", "status": "closed", "order_id": "d"},
-        ],
-    )
-    trades = forward.read_paper_trades(db, ["BTC/EUR"])
-    assert [t.id for t in trades] == [1, 2]
-    assert trades[0].open_date == ts("2025-01-05 00:00:30.123456")
-    assert trades[0].close_date == ts("2025-01-07 00:00:20")
-    assert trades[1].is_open and trades[1].close_date is None and trades[1].fee_close is None
-    assert forward.read_order_counts(db, ["BTC/EUR"]) == {
-        "entry:canceled": 1,
-        "entry:closed": 1,
-        "exit:closed": 1,
-    }
-
-
 def test_read_only_connection_does_not_create_a_database(tmp_path: Path) -> None:
     missing = tmp_path / "absent.sqlite"
-    with pytest.raises(sqlite3.OperationalError):
-        forward.read_paper_trades(str(missing), ["BTC/EUR"])
+    with pytest.raises(forward.SafeMessageError, match="not found"):
+        forward.filled_snapshot(str(missing), ["BTC/EUR"])
     assert not missing.exists()
 
 
