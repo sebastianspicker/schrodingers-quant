@@ -33,7 +33,7 @@ filterwarnings = ["error::DeprecationWarning:sq", "error::FutureWarning"]
 
 [dependency-groups]
 dev = [
-    "ruff==0.16.8",
+    "ruff==0.17.3",
     # Unit tests of the pure research, live-tooling and ops logic run on the
     # development machine without Docker; Freqtrade itself is never a dev
     # dependency (the pinned image is the only Freqtrade runtime).
