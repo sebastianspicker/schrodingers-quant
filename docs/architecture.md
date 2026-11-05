@@ -12,6 +12,209 @@ checks, research tooling, an optional model worker and host operations around
 it. Custom execution infrastructure (an intent journal, a supervisor) is added
 only when a drill shows a gap in Freqtrade.
 
+## How it works
+
+Five diagrams for a first read. The tables and rules further down are the
+reference; this section shows how the parts connect.
+
+### What runs where
+
+The system has two homes: a Debian VPS that trades (in dry-run as shipped)
+and a development machine that does all research.
+
+```mermaid
+flowchart LR
+  subgraph vps [VPS: systemd + Docker]
+    timers[systemd timers]
+    bot[freqtrade service]
+    jev[jev-worker]
+    tools[tools container]
+    runtime[("user_data/runtime")]
+  end
+  subgraph dev [Development machine]
+    research[research container]
+    records[("research/experiments")]
+  end
+  kraken[Kraken]
+  binance[Binance public data]
+  dms["Dead-man's switch"]
+  bot -->|"market data, orders"| kraken
+  bot -->|"trade DB, candidates"| runtime
+  jev -.->|"assessments.jsonl"| runtime
+  timers -->|"docker compose run"| tools
+  tools -->|"public candles"| kraken
+  tools -->|"reports (DB read-only)"| runtime
+  timers -.->|"health ping"| dms
+  research -->|OHLCV| binance
+  research -->|"backtest records"| records
+  classDef focus fill:#fde68a,stroke:#b45309,color:#1f2937
+  class bot focus
+```
+
+`freqtrade` is the only process that can send an order, and it reads only
+`config/` and `user_data/strategies/`, both mounted read-only. Everything
+else either appends to files under `user_data/runtime/` (`jev-worker`) or
+reads them (`tools`, the health ping). `jev-worker` is opt-in (Compose
+profile `jev`) and has no exchange code or credentials. Research never runs
+on the VPS; it shares only the strategy files with the bot.
+
+Where in the code:
+[compose.yaml](../compose.yaml),
+[ops/systemd/](../ops/systemd/),
+[user_data/strategies/H1ChannelBreakout.py](../user_data/strategies/H1ChannelBreakout.py),
+[src/sq/jev/worker.py](../src/sq/jev/worker.py),
+[src/sq/research/pipeline.py](../src/sq/research/pipeline.py)
+
+### A 4h candle closes: from signal to order
+
+What happens inside the bot when H1 fires, with the optional Jev filter.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant kraken as Kraken
+  participant ft as Freqtrade loop
+  participant strat as H1JevShadow
+  participant files as runtime/jev files
+  participant worker as jev-worker
+  participant db as trade DB
+  kraken->>ft: closed 4h candle
+  ft->>strat: populate_entry_trend
+  strat-->>ft: enter_long (close above 20-day high)
+  ft->>strat: confirm_trade_entry
+  alt jev.mode off
+    strat-->>ft: True
+  else shadow
+    strat->>files: append candidate
+    strat-->>ft: True
+  else filter
+    strat->>files: append candidate, read assessment
+    strat-->>ft: True only on fresh approve
+  end
+  worker->>files: poll candidates, append assessment
+  ft->>kraken: entry order (live only)
+  ft->>db: trade and fills
+```
+
+Steps 1–3 are plain H1 (`H1ChannelBreakout`): Freqtrade evaluates only closed
+candles and sets `enter_long` when the close breaks the previous 20-day high;
+exits mirror it on the 10-day low, plus the fixed −20 % stop. Steps 4–9 apply
+only when the config names `H1JevShadow`; without a `jev` section it behaves
+as `off`. In filter mode the first call usually finds no assessment and blocks.
+Freqtrade retries the entry every `process_throttle_secs` (5 s) while the
+candle's signal stands, so the worker (step 10) has up to about four hours to
+answer. Any error, missing, expired or non-`approve` assessment blocks the
+entry; exits are never touched. In the shipped dry-run, step 11 is simulated.
+
+Where in the code:
+[user_data/strategies/H1ChannelBreakout.py](../user_data/strategies/H1ChannelBreakout.py) (`populate_entry_trend`),
+[user_data/strategies/H1JevShadow.py](../user_data/strategies/H1JevShadow.py) (`confirm_trade_entry`, `_jev_filter_decision`),
+[src/sq/jev/worker.py](../src/sq/jev/worker.py) (`process_once`),
+[src/sq/jev/protocol.py](../src/sq/jev/protocol.py),
+[config/base.json](../config/base.json)
+
+### The daily forward report
+
+How the forward paper test is measured and how a STOP reaches a human.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant timer as sq-forward-report.timer
+  participant rec as forward_record.py
+  participant fwd as sq.live.forward
+  participant kraken as Kraken public API
+  participant reports as runtime/reports
+  participant health as health_ping.py
+  timer->>rec: 04:15 UTC via forward_report.sh
+  rec->>fwd: docker compose run tools
+  fwd->>fwd: read trade DB (mode=ro)
+  fwd->>kraken: fetch_ohlcv 4h
+  fwd->>reports: forward-TIMESTAMP.json, exit 0 or 4
+  rec->>reports: latch STOP, check window, forward-latest.json
+  rec-->>timer: exit 4 on STOP (unit fails)
+  health->>reports: read latest + latch (every 5 min)
+  health-)health: ping dead-man's switch or fail
+```
+
+`forward_record.py` holds a lock so two reports never overlap (step 1),
+then runs the report inside the `tools` container (step 2). The report reads
+the trade DB through a read-only SQLite URI, appends closed candles to
+`market-data.sqlite` and scores the criteria F1–F4 (steps 3–5). The first
+STOP is latched in `forward-stop.json` before any other check, so a later
+error cannot erase it (step 6). A failing unit triggers `sq-alert@`, and the
+5-minute health ping also reports a stale or STOP report when
+`HEALTH_FORWARD_REPORT` is set (steps 7–9).
+
+Where in the code:
+[ops/forward_report.sh](../ops/forward_report.sh),
+[ops/forward_record.py](../ops/forward_record.py) (`run`, `publish`),
+[src/sq/live/forward.py](../src/sq/live/forward.py) (`main`, `build_report`),
+[src/sq/live/candles.py](../src/sq/live/candles.py),
+[ops/health_ping.py](../ops/health_ping.py),
+[ops/systemd/sq-forward-report.timer](../ops/systemd/sq-forward-report.timer)
+
+### From data to a research record
+
+How a backtest becomes the evidence the README and the demo cite.
+
+```mermaid
+flowchart LR
+  binance[Binance OHLCV] -->|"download, manifest"| pipeline[sq.research.pipeline]
+  pipeline -->|"freqtrade backtesting"| ft[Freqtrade image]
+  ft -->|"trades, summary"| pipeline
+  pipeline -->|"run + mtm JSON, hashes"| records[("research/experiments/H1")]
+  records -->|"make stats, make physics"| analysis[statistics, physics]
+  analysis -->|"JSON records"| records
+  records -->|"make desk"| desk["build/desk/report.md"]
+  records -->|"pages/build.sh"| pages[GitHub Pages demo]
+```
+
+`make research ARGS=<subcommand>` runs `python -m sq.research` in the
+`research` container, which drives Freqtrade's own backtester and stamps each
+record with the image digest, strategy hash and data manifest. Everything to
+the right of the records runs without Docker: `make stats` and `make physics`
+rebuild their JSON from the recorded curves, `make desk` writes the trader
+report, and the Pages build only copies files. The held-out records refuse to
+be overwritten.
+
+Where in the code:
+[src/sq/research/\_\_main\_\_.py](../src/sq/research/__main__.py),
+[src/sq/research/pipeline.py](../src/sq/research/pipeline.py),
+[src/sq/research/h1.py](../src/sq/research/h1.py),
+[src/sq/research/statistics.py](../src/sq/research/statistics.py),
+[src/sq/research/physics.py](../src/sq/research/physics.py),
+[src/sq/research/desk.py](../src/sq/research/desk.py),
+[pages/build.sh](../pages/build.sh)
+
+### Checks and release
+
+Nothing is deployed automatically. CI runs on Dependabot pull requests and on
+demand; the Pages demo is published only by a manual run.
+
+```mermaid
+flowchart LR
+  pr[Dependabot PR] --> ci[ci.yml]
+  manual[workflow_dispatch] --> ci
+  ci -->|"make check"| check["ruff, shellcheck, pytest"]
+  ci -->|"make validate*"| validate[configs in pinned image]
+  anypr[Any PR] --> sec[dependency-security.yml]
+  dispatch[manual run] --> pagesci[pages.yml]
+  pagesci -->|"build/pages"| ghp[GitHub Pages]
+```
+
+`make ci` is the same command locally and in CI: lint, format check, Compose
+syntax for every overlay, shellcheck, unit tests, then config and
+Freqtrade-contract checks inside the pinned image. No workflow touches the
+VPS; getting a new version onto it is an operator step (see
+[operations](operations.md)).
+
+Where in the code:
+[.github/workflows/ci.yml](../.github/workflows/ci.yml),
+[.github/workflows/dependency-security.yml](../.github/workflows/dependency-security.yml),
+[.github/workflows/pages.yml](../.github/workflows/pages.yml),
+[Makefile](../Makefile)
+
 ## Components and ownership
 
 | Component | Home | Runs | Owns / writes | Talks to |
