@@ -10,6 +10,8 @@ Freqtrade: one recorded strategy, an offline analysis desk and tools for forward
 paper trading on Kraken. The bot is both trading and not trading until you
 look at the config. Out of the box, it is **not trading**.
 
+> _Claude was used to polish and proof-read the code and documentation of this repository._
+
 <details>
 <summary>Status and limitations</summary>
 
@@ -66,6 +68,9 @@ flowchart LR
     Report --> Review[Operator reviews the evidence]
     Forward --> Review
 ```
+
+For what runs where, what happens when a candle closes and how a STOP reaches
+the operator, see [How it works](docs/architecture.md#how-it-works).
 
 ## For a quant trader
 
