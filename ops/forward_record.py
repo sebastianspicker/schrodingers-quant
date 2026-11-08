@@ -76,7 +76,7 @@ _SECRET_PATTERNS = (
     (
         re.compile(
             r"(?i)([\w.-]*(?:token|secret|passw(?:or)?d|api[_-]?key|authorization|cookie)[\w.-]*"
-            r"\s*[=:]\s*)\S+"
+            r"[\"']?\s*[=:]\s*[\"']?)[^\s\"',}]+"
         ),
         r"\1[REDACTED]",
     ),

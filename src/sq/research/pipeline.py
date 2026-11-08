@@ -159,8 +159,10 @@ def backtest(
     ]
     subprocess.run(argv, check=True)
 
-    write_summary(run, results_dir, record_dir=record_dir, manifest_path=manifest_path)
+    # Summary last: it is the file the held-out guard above checks, so a failed
+    # mtm write must leave it absent and the run repeatable.
     write_mtm(run, results_dir, record_dir=record_dir, manifest_path=manifest_path, datadir=datadir)
+    write_summary(run, results_dir, record_dir=record_dir, manifest_path=manifest_path)
 
 
 # --- bias checks ---------------------------------------------------------
@@ -221,7 +223,7 @@ def benchmark(
     out_pair = pair.replace("/", "_")
     out = record_dir / f"benchmark-{period}-{out_pair}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
+    provenance.atomic_write_text(out, json.dumps(result, indent=2, sort_keys=True) + "\n")
     print(f"Wrote {out}")
     print(json.dumps(result, indent=2, sort_keys=True))
     return result

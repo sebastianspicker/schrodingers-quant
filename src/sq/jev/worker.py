@@ -152,7 +152,10 @@ def read_cursor(path: Path) -> int:
     if not path.exists():
         return 0
     try:
-        return int(path.read_text().strip() or "0")
+        offset = int(path.read_text().strip() or "0")
+        if offset < 0:
+            raise ValueError(offset)
+        return offset
     except ValueError:
         logger.warning("Jev worker: cursor file %s is unreadable; restarting from 0", path)
         return 0

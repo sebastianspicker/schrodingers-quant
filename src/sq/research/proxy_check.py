@@ -20,6 +20,7 @@ import ccxt
 import pandas as pd
 
 from sq.research.data_manifest import feather_path
+from sq.research.provenance import atomic_write_text
 
 PAIRS = ["BTC/EUR", "ETH/EUR"]
 TIMEFRAMES = ["4h", "1d"]
@@ -107,6 +108,6 @@ def run(datadir: Path, out: Path) -> int:
         "all_pass": all_pass,
     }
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(output, indent=2, sort_keys=True) + "\n")
+    atomic_write_text(out, json.dumps(output, indent=2, sort_keys=True) + "\n")
     print(f"Wrote {out}. all_pass={all_pass}")
     return 0 if all_pass else 1

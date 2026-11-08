@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from sq.research.provenance import sha256_file
+from sq.research.provenance import atomic_write_text, sha256_file
 
 
 def feather_path(datadir: Path, pair: str, timeframe: str) -> Path:
@@ -62,6 +62,6 @@ def build_manifest(datadir: Path, exchange: str) -> dict:
 def write_manifest(datadir: Path, out: Path, exchange: str = "binance") -> dict:
     manifest = build_manifest(datadir, exchange)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    atomic_write_text(out, json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     print(f"Wrote {out} ({len(manifest['entries'])} files).")
     return manifest

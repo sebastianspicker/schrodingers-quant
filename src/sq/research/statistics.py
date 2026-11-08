@@ -53,7 +53,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from sq.research.h1 import DEFAULT_SEED
+from sq.research.h1 import DEFAULT_SEED, FEE_BASE, FEE_STRESS
 from sq.research.metrics import max_drawdown_pct
 from sq.research.provenance import atomic_write_text
 
@@ -67,7 +67,7 @@ K2_FACTOR = 0.6  # H1.md: held-out drawdown <= 0.6 x buy-and-hold's
 
 # Cost per side for the runs the demo shows, keyed by the `-<cost>` suffix of
 # the run key (`equity_curves.COST_LABELS` inverted).
-COST_PER_SIDE = {"base": 0.005, "stress": 0.01}
+COST_PER_SIDE = {"base": FEE_BASE, "stress": FEE_STRESS}
 
 
 def _round(value: float | None, digits: int = 4) -> float | None:
@@ -231,7 +231,9 @@ def power_analysis(
             "t_target": t_target,
             "trades_needed": None,
             "years_needed": None,
-            "note": "mean trade is not positive; no sample size reaches the target",
+            "note": "mean trade is not positive; no sample size reaches the target"
+            if not (mean_pct > 0)
+            else "needs at least two trades with different returns to estimate dispersion",
         }
     trades_needed = math.ceil((t_target * sd_pct / mean_pct) ** 2)
     years = trades_needed / trades_per_year if trades_per_year > 0 else None

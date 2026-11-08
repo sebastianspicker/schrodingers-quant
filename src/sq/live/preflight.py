@@ -13,6 +13,7 @@ Exit code: 0 feasible, 2 infeasible, 1 on error (including invalid arguments).
 
 import argparse
 import json
+import math
 import sys
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
@@ -121,6 +122,14 @@ def assess_feasibility(
     defaults to Freqtrade's `amount_to_precision`; tests inject their own.
     """
     stoploss = validate_stoploss(stoploss)
+    raw_stake = stake_eur
+    try:
+        stake_eur = float(stake_eur)
+    except (TypeError, ValueError):
+        stake_eur = math.nan
+    # NaN compares False against every minimum below, so it would report "feasible".
+    if not (math.isfinite(stake_eur) and stake_eur > 0):
+        raise SafeMessageError(f"stake must be a positive finite EUR amount, got {raw_stake!r}")
     amount_to_precision = round_amount or freqtrade_amount_rounder()
     reasons: list[str] = []
 
@@ -364,7 +373,7 @@ def main() -> int:
     market = fetch_market_profile(pair, config)
     feasibility = assess_feasibility(
         market,
-        float(stake_eur),
+        stake_eur,
         float(stoploss),
         require_account_data=args.require_account_data,
     )

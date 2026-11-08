@@ -266,7 +266,9 @@ harness does not invent one now.
   exist here: the endpoint, authentication, request and response schema,
   pricing, rate limits, and a spending cap enforced by the worker. A provider
   is added to `sq.jev.providers` (and to the worker's `--provider` choices)
-  only once those are known, rather than guessing.
+  only once those are known, rather than guessing. The `jev-worker` service
+  runs with `network_mode: none` until then; a provider that calls an API
+  removes that line in `compose.yaml`.
 - **The offline comparison** needs assessments recorded by shadow mode running
   on real forward data (collected after implementation); nothing here backfills
   or simulates that. It must also compare the model against a deterministic rule

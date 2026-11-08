@@ -43,6 +43,7 @@ import pandas as pd
 
 from sq.research import growth, ledger, nulls, provenance, proxy_data, stylized
 from sq.research.h1 import CANDLES_PER_YEAR, DEFAULT_SEED
+from sq.research.statistics import COST_PER_SIDE as FEES
 from sq.research.statistics import daily_returns
 
 SCHEMA_VERSION = 3
@@ -52,7 +53,6 @@ DEFAULT_FIRST_PASSAGE_TRIALS = 20000
 PREFIX_TRIALS = 25
 NULL_RUNS = ("heldout-base", "validation-base", "train-base")
 ALL_SECTIONS = ("stylized", "nulls", "calibration", "first_passage", "growth", "ledger")
-FEES = {"base": 0.005, "stress": 0.01}
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_LEDGER = REPO_ROOT / "research" / "ledger.json"
 

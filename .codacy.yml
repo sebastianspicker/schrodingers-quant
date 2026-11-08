@@ -1,0 +1,14 @@
+# Codacy Cloud analysis scope. Tools and patterns come from the org coding standards.
+exclude_paths:
+  - "uv.lock"       # generated lockfile
+  - "tests/**"      # unit tests, fixtures and contract checks
+engines:
+  # Complexity metrics stay on for code that runs beside the bot (src/sq/live,
+  # src/sq/jev, ops, user_data/strategies). The offline research code is long,
+  # linear numerics checked against recorded outputs, and the demo page is a
+  # single script; Lizard's medium thresholds there are noise, not defects.
+  lizard:
+    exclude_paths:
+      - "src/sq/research/**"
+      - "research/**"
+      - "pages/**"

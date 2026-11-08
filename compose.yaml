@@ -57,6 +57,9 @@ services:
     cpus: 0.5
     mem_limit: 256m
     pids_limit: 128
+    # The null provider exchanges files only through the volume; a real
+    # provider that calls a model API must remove this line.
+    network_mode: none
     entrypoint: []
     command:
       - python

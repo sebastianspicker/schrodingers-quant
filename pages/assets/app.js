@@ -278,7 +278,7 @@ function renderStats(run) {
   set("mean", `${pct(mean(r))} (${pct(sd(r), false)})`);
   set("t", fixed(t));
   set("pf", losses.length ? fixed(sum(wins) / -sum(losses)) : "n/a");
-  set("wl", `${pct(mean(wins))} / ${losses.length ? pct(mean(losses)) : "n/a"}`);
+  set("wl", `${wins.length ? pct(mean(wins)) : "n/a"} / ${losses.length ? pct(mean(losses)) : "n/a"}`);
   set("top2", minus(`${pct(sum(top)).replace(" %", " pp")} / ${pct(sum(r) - sum(top)).replace(" %", " pp")}`));
   set("hold", `${Math.round(median / 24)} d`);
   set(

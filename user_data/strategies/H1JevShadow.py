@@ -107,6 +107,7 @@ import hashlib
 import inspect
 import json
 import logging
+import os
 import types
 from datetime import UTC, datetime, timedelta
 from functools import cache
@@ -204,22 +205,35 @@ def _append_json_line(path: Path, record: dict) -> None:
     # A single write() call of one line is atomic against other appenders on
     # POSIX for the line lengths this module produces (well under PIPE_BUF);
     # this module has exactly one writer (the live strategy process) anyway.
-    with open(path, "a", encoding="utf-8") as fh:
-        fh.write(json.dumps(record, sort_keys=True) + "\n")
+    line = json.dumps(record, sort_keys=True) + "\n"
+    with open(path, "a+b") as fh:
+        # After a torn write (disk full, kill) start on a fresh line instead of gluing on.
+        end = fh.seek(0, os.SEEK_END)
+        if end:
+            fh.seek(end - 1)
+            if fh.read(1) != b"\n":
+                line = "\n" + line
+        fh.write(line.encode("utf-8"))
 
 
 def _read_jsonl(path: Path):
     """Yield parsed records from a JSONL file; skip and log malformed lines."""
     if not path.exists():
         return
-    with open(path, encoding="utf-8") as fh:
+    # Binary lines: a bad byte fails json.loads for that line only (UnicodeDecodeError
+    # is a ValueError) instead of aborting the text-mode iteration of the whole file.
+    with open(path, "rb") as fh:
         for line_number, raw_line in enumerate(fh, start=1):
             line = raw_line.strip()
             if not line:
                 continue
             try:
-                yield json.loads(line)
-            except json.JSONDecodeError:
+                record = json.loads(line)
+            except ValueError:
+                record = None
+            if isinstance(record, dict):
+                yield record
+            else:
                 logger.warning("Jev: skipping malformed line %d in %s", line_number, path)
 
 
@@ -318,7 +332,7 @@ class H1JevShadow(H1ChannelBreakout):
     def _jev_ttl_minutes(self) -> float:
         return float(self._jev_config().get("assessment_ttl_minutes", DEFAULT_TTL_MINUTES))
 
-    def _jev_build_candidate(self, pair: str, rate: float, current_time: datetime) -> dict:
+    def _jev_build_candidate(self, pair: str, rate: float) -> dict:
         if self.dp is None:
             raise RuntimeError("Jev: no DataProvider on this strategy instance")
         dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
@@ -474,7 +488,7 @@ class H1JevShadow(H1ChannelBreakout):
 
         if mode == "shadow":
             try:
-                candidate = self._jev_build_candidate(pair, rate, current_time)
+                candidate = self._jev_build_candidate(pair, rate)
                 self._jev_record_candidate(candidate)
             except Exception:
                 # Shadow mode must never affect orders, including on I/O errors.
@@ -483,7 +497,7 @@ class H1JevShadow(H1ChannelBreakout):
 
         # mode == "filter"
         try:
-            candidate = self._jev_build_candidate(pair, rate, current_time)
+            candidate = self._jev_build_candidate(pair, rate)
             self._jev_record_candidate(candidate)
             return self._jev_filter_decision(candidate)
         except Exception:

@@ -32,24 +32,30 @@ def read_jsonl(path: Path, *, strict: bool = False) -> Iterator[dict]:
 
     By default, a malformed line is skipped and logged, never raised: Jev's
     file I/O must never crash the strategy process or the worker loop. Pass
-    `strict=True` to raise `json.JSONDecodeError` instead — used by
+    `strict=True` to raise `ValueError` (a malformed or non-object line) instead — used by
     `sq.research.jev_evaluation`, an offline analysis tool where silently
     dropping a malformed input line would be a worse failure mode than
     stopping.
     """
     if not path.exists():
         return
-    with open(path, encoding="utf-8") as fh:
+    # Binary lines: a bad byte fails json.loads for that line only (UnicodeDecodeError
+    # is a ValueError) instead of aborting the text-mode iteration of the whole file.
+    with open(path, "rb") as fh:
         for line_number, raw_line in enumerate(fh, start=1):
             line = raw_line.strip()
             if not line:
                 continue
             try:
-                yield json.loads(line)
-            except json.JSONDecodeError:
+                record = json.loads(line)
+                if not isinstance(record, dict):
+                    raise ValueError(f"line {line_number} is not a JSON object")
+            except ValueError:
                 if strict:
                     raise
                 logger.warning("Jev: skipping malformed line %d in %s", line_number, path)
+                continue
+            yield record
 
 
 def append_jsonl(path: Path, record: dict) -> None:
@@ -58,11 +64,15 @@ def append_jsonl(path: Path, record: dict) -> None:
     The whole line goes out in one `os.write` on an `O_APPEND` descriptor and is
     fsynced before returning. For a regular file that write is not interleaved
     with other appenders and is not split by us; a short write (disk full, a
-    signal) can still leave a partial line, which readers skip as malformed.
+    signal) can still leave a partial line, which readers skip as malformed;
+    the next append then starts on a fresh line so it is not glued onto it.
     """
     data = (json.dumps(record, sort_keys=True) + "\n").encode("utf-8")
-    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o666)
+    fd = os.open(path, os.O_RDWR | os.O_APPEND | os.O_CREAT, 0o666)
     try:
+        size = os.fstat(fd).st_size
+        if size and os.pread(fd, 1, size - 1) != b"\n":
+            data = b"\n" + data
         view = memoryview(data)
         while view:
             view = view[os.write(fd, view) :]

@@ -179,7 +179,8 @@ def fetch_health(base_url: str, username: str, password: str, timeout: float) ->
 def disk_usage_percent(path: Path) -> float:
     """Percent of the filesystem holding `path` currently in use."""
     usage = shutil.disk_usage(path)
-    return (usage.used / usage.total) * 100
+    # As df reports it: blocks reserved for root count neither as used nor as free.
+    return (usage.used / (usage.used + usage.free)) * 100
 
 
 def send_ping(url: str, timeout: float, body: str = "") -> bool:

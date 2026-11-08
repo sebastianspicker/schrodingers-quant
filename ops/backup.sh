@@ -63,6 +63,9 @@ log() {
 }
 
 staged_secrets_dir=
+# Set while this run's own timestamp directory is incomplete; removed on failure
+# so retention never counts a partial backup as one of the $keep_local kept.
+partial_dest=
 cleanup_staged_secrets() {
     # config/local is copied into the local bundle only long enough for restic
     # to encrypt it.  The traps below are essential here: `set -e`, a failed
@@ -72,6 +75,10 @@ cleanup_staged_secrets() {
     if [ -n "$staged_secrets_dir" ] && [ -d "$staged_secrets_dir" ]; then
         rm -rf "$staged_secrets_dir"
         log "removed staged config/local from the local backup"
+    fi
+    if [ -n "$partial_dest" ] && [ -d "$partial_dest" ]; then
+        rm -rf "${partial_dest:?}"
+        log "removed incomplete backup $partial_dest"
     fi
 }
 trap cleanup_staged_secrets 0
@@ -156,7 +163,11 @@ done
 
 timestamp=$(date -u +%Y%m%dT%H%M%SZ)
 dest="$backup_root/$timestamp"
-mkdir -p "$dest" "$dest/config"
+mkdir -p "$backup_root"
+# No -p: this run must create $dest itself before it may remove it on failure.
+mkdir "$dest"
+partial_dest=$dest
+mkdir "$dest/config"
 
 # Claim the backup root for local retention: only when it is new or holds
 # nothing but this script's own timestamp directories. A shared directory with
@@ -217,25 +228,8 @@ if [ -d "$runtime_dir/reports" ]; then
     done
 fi
 
+partial_dest=
 log "backup written to $dest"
-
-if [ -n "${RESTIC_REPOSITORY:-}" ]; then
-    if ! command -v restic >/dev/null 2>&1; then
-        fail "RESTIC_REPOSITORY is set but the restic binary is not installed"
-    fi
-    if [ -d "$repo_root/config/local" ]; then
-        staged_secrets_dir="$dest/config/local"
-        cp -R "$repo_root/config/local" "$staged_secrets_dir"
-        log "included config/local (restic will encrypt this bundle)"
-    fi
-    log "pushing to restic repository"
-    restic backup --tag sq-backup "$dest" >/dev/null
-    # Remove the plaintext staging copy immediately after a successful push;
-    # the EXIT trap performs the same cleanup on every failure path.
-    cleanup_staged_secrets
-    log "pruning restic snapshots (--keep-daily 14 --keep-weekly 8)"
-    restic forget --tag sq-backup --group-by host,tags --keep-daily 14 --keep-weekly 8 --prune >/dev/null
-fi
 
 # Defense in depth: strip config/local from every locally retained backup,
 # including any left behind by a prior run of this script before this
@@ -268,6 +262,25 @@ else
                 rm -rf "${old:?}"
             done
     fi
+fi
+
+# Offsite push last: a failing restic run must not skip the local pruning above.
+if [ -n "${RESTIC_REPOSITORY:-}" ]; then
+    if ! command -v restic >/dev/null 2>&1; then
+        fail "RESTIC_REPOSITORY is set but the restic binary is not installed"
+    fi
+    if [ -d "$repo_root/config/local" ]; then
+        staged_secrets_dir="$dest/config/local"
+        cp -R "$repo_root/config/local" "$staged_secrets_dir"
+        log "included config/local (restic will encrypt this bundle)"
+    fi
+    log "pushing to restic repository"
+    restic backup --tag sq-backup "$dest" >/dev/null
+    # Remove the plaintext staging copy immediately after a successful push;
+    # the EXIT trap performs the same cleanup on every failure path.
+    cleanup_staged_secrets
+    log "pruning restic snapshots (--keep-daily 14 --keep-weekly 8)"
+    restic forget --tag sq-backup --group-by host,tags --keep-daily 14 --keep-weekly 8 --prune >/dev/null
 fi
 
 log "done"

@@ -240,7 +240,7 @@ def _trade_set_summary(trades: pd.DataFrame, wallet: float, candles: pd.DataFram
 
     if candles is not None and trade_count > 0:
         equity = equity_curve(trades, candles, wallet)
-        summary["mtm_max_drawdown_pct"] = round(max_drawdown_pct(equity), 4)
+        summary["mtm_max_drawdown_pct"] = round(max_drawdown_pct(equity, initial=wallet), 4)
     elif candles is not None:
         summary["mtm_max_drawdown_pct"] = 0.0
 

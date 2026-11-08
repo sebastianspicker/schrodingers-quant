@@ -76,7 +76,9 @@ def mtm_report(
         "notional": wallet,
         "final_equity": round(float(equity.iloc[-1]), 2),
         "net_return_pct": round((growth - 1) * 100, 4),
-        "cagr_pct": round((growth ** (1 / years) - 1) * 100, 4) if growth > 0 else None,
+        "cagr_pct": round((growth ** (1 / years) - 1) * 100, 4)
+        if growth > 0 and years > 0
+        else None,
         "mtm_max_drawdown_pct": round(max_drawdown_pct(equity, initial=wallet), 4),
     }
 
